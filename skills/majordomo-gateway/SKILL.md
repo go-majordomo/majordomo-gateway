@@ -27,18 +27,20 @@ results differ.
 | Target | `MAJORDOMO_GATEWAY_URL` | Get an API key | Read usage |
 |---|---|---|---|
 | **Managed Cloud** | `https://gateway.gomajordomo.com` | dashboard → API Keys | dashboard (`app.gomajordomo.com`) |
-| **Self-hosted Steward** | `http://localhost:7680` | dashboard → API Keys | dashboard |
-| **Open-source `majordomo-gateway`** | `http://localhost:6560` | `gateway-cli keys create` | `gateway-cli usage` / MCP |
+| **Self-hosted Steward** | wherever you deployed it — **port 7680** by default (`http://localhost:7680` for local dev) | dashboard → API Keys | dashboard |
+| **Open-source `majordomo-gateway`** | wherever you deployed it — **port 6560** by default (`http://localhost:6560` for local dev) | `gateway-cli keys create` | `gateway-cli usage` / MCP |
 
-Everything below is identical across the three. Confirm the URL/port if it differs
-from the default.
+Everything below is identical across the three. Only Managed Cloud has a fixed URL; a
+self-hosted Steward or open-source gateway lives at whatever host you deployed it to (a
+server, a container, a Kubernetes ingress) — `localhost` is just the local-dev case.
+**Always ask for the actual base URL; the ports above are only the defaults.**
 
 ## Step 2 — Environment
 
 Always read config from the environment; never hardcode URLs or keys.
 
 ```bash
-MAJORDOMO_GATEWAY_URL=http://localhost:7680        # or the Cloud / :6560 URL above
+MAJORDOMO_GATEWAY_URL=https://your-gateway.example.com   # your deploy's base URL (local dev: http://localhost:7680 Steward, :6560 OSS)
 MAJORDOMO_API_KEY=mdm_sk_your_key_here             # always required
 
 # Provider keys — whichever you use. They are relayed upstream by the gateway.

@@ -1,6 +1,6 @@
 IMAGE := majordomo-gateway
 
-.PHONY: help build build-server build-cli build-mcp run test test-cover lint fmt vet tidy migrate docker-build
+.PHONY: help build build-server build-cli build-mcp run test test-cover lint fmt vet tidy migrate docker-build compose-up compose-down compose-logs
 
 help:
 	@echo "Available targets:"
@@ -14,6 +14,9 @@ help:
 	@echo "  tidy         Run go mod tidy"
 	@echo "  migrate      Run database migrations"
 	@echo "  docker-build Build Docker image"
+	@echo "  compose-up   Start gateway + Postgres via Docker Compose"
+	@echo "  compose-down Stop the Docker Compose stack"
+	@echo "  compose-logs Follow gateway logs from the Compose stack"
 
 build: build-server build-cli build-mcp
 
@@ -53,3 +56,12 @@ migrate: build-server
 
 docker-build:
 	docker build -t $(IMAGE) .
+
+compose-up:
+	docker compose up -d --build
+
+compose-down:
+	docker compose down
+
+compose-logs:
+	docker compose logs -f gateway

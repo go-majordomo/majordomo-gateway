@@ -1,0 +1,56 @@
+# Docker Compose deployment for majordomo-gateway.
+#
+# Quickstart:
+#   cp .env.example .env      # set POSTGRES_PASSWORD and ADMIN_TOKEN
+#   make compose-up
+#
+# Gateway listens on localhost:6560, Postgres on localhost:5432.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-majordomo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-majordomo_gateway}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-majordomo} -d ${POSTGRES_DB:-majordomo_gateway}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: majordomo-gateway:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${PORT:-6560}:6560"
+    environment:
+      PORT: 6560
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-majordomo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-majordomo_gateway}
+      POSTGRES_SSLMODE: disable
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?ADMIN_TOKEN is required}
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:6560/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  postgres_data:
