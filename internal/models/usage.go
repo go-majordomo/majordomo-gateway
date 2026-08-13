@@ -209,3 +209,28 @@ type RunTree struct {
 	EndedAt      time.Time `json:"ended_at"`
 	Truncated    bool      `json:"truncated"` // true if the run exceeded the fetch cap
 }
+
+// UsageQueryFilter is a single key=value filter on request metadata.
+type UsageQueryFilter struct {
+	Key   string
+	Value string
+}
+
+// UsageQuery is the raw, transport-agnostic query descriptor for usage reporting. The
+// service layer resolves it into a repository filter: the time range comes from
+// explicit Start/End (YYYY-MM-DD or RFC3339) or a Preset (7d/30d/90d, default 30d),
+// and Limit/Offset are clamped per endpoint. It carries no json tags — controllers map
+// their HTTP request bodies onto it.
+type UsageQuery struct {
+	Preset          string
+	Start           string
+	End             string
+	APIKeyID        string
+	Provider        string
+	Model           string
+	StatusClass     string
+	MetadataFilters []UsageQueryFilter
+	ExcludeRuns     bool
+	Limit           int
+	Offset          int
+}

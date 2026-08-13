@@ -1,7 +1,6 @@
 package controllers
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -12,22 +11,19 @@ import (
 
 	"github.com/go-majordomo/majordomo-gateway/internal/httputil"
 	"github.com/go-majordomo/majordomo-gateway/internal/repositories"
+	"github.com/go-majordomo/majordomo-gateway/internal/services"
 )
-
-// backfillBatchSize bounds each retro-index / cleanup batch when a key is
-// (de)activated, so the work never locks the table for long.
-const backfillBatchSize = 1000
 
 // MetadataController manages discovery and activation of request-metadata keys. Only
 // activated keys are copied into indexed_metadata (and thus become queryable), which
 // keeps the GIN index bounded regardless of what callers send.
 type MetadataController struct {
-	repo *repositories.MetadataKeyRepository
+	svc *services.MetadataService
 }
 
 // NewMetadataController constructs a MetadataController.
-func NewMetadataController(repo *repositories.MetadataKeyRepository) *MetadataController {
-	return &MetadataController{repo: repo}
+func NewMetadataController(svc *services.MetadataService) *MetadataController {
+	return &MetadataController{svc: svc}
 }
 
 // RegisterRoutes mounts the metadata-key endpoints onto the given router.
@@ -40,7 +36,7 @@ func (c *MetadataController) RegisterRoutes(r chi.Router) {
 // List returns every discovered metadata key with its approximate cardinality and
 // whether it is currently indexed.
 func (c *MetadataController) List(w http.ResponseWriter, r *http.Request) {
-	keys, err := c.repo.ListMetadataKeys(r.Context())
+	keys, err := c.svc.ListKeys(r.Context())
 	if err != nil {
 		slog.Error("failed to list metadata keys", "error", err)
 		httputil.WriteJSONError(w, http.StatusInternalServerError, "internal error")
@@ -79,11 +75,10 @@ func (c *MetadataController) Activate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := c.repo.ActivateMetadataKey(r.Context(), apiKeyID, keyName); err != nil {
+	if err := c.svc.Activate(r.Context(), apiKeyID, keyName); err != nil {
 		c.mapErr(w, err, "activate metadata key")
 		return
 	}
-	go c.backfill(apiKeyID, keyName)
 	httputil.WriteJSON(w, http.StatusOK, map[string]any{"status": "activated", "backfilling": true})
 }
 
@@ -94,24 +89,11 @@ func (c *MetadataController) Deactivate(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	if err := c.repo.DeactivateMetadataKey(r.Context(), apiKeyID, keyName); err != nil {
+	if err := c.svc.Deactivate(r.Context(), apiKeyID, keyName); err != nil {
 		c.mapErr(w, err, "deactivate metadata key")
 		return
 	}
-	go c.cleanup(apiKeyID, keyName)
 	httputil.WriteJSON(w, http.StatusOK, map[string]any{"status": "deactivated", "cleaning": true})
-}
-
-func (c *MetadataController) backfill(apiKeyID uuid.UUID, keyName string) {
-	if _, err := c.repo.BackfillIndexedMetadata(context.Background(), apiKeyID, keyName, backfillBatchSize); err != nil {
-		slog.Error("metadata backfill failed", "error", err, "api_key_id", apiKeyID, "key", keyName)
-	}
-}
-
-func (c *MetadataController) cleanup(apiKeyID uuid.UUID, keyName string) {
-	if _, err := c.repo.CleanupIndexedMetadata(context.Background(), apiKeyID, keyName, backfillBatchSize); err != nil {
-		slog.Error("metadata cleanup failed", "error", err, "api_key_id", apiKeyID, "key", keyName)
-	}
 }
 
 func (c *MetadataController) mapErr(w http.ResponseWriter, err error, msg string) {
