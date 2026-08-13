@@ -16,6 +16,7 @@ import (
 	"github.com/go-majordomo/majordomo-gateway/internal/proxy"
 	"github.com/go-majordomo/majordomo-gateway/internal/repositories"
 	"github.com/go-majordomo/majordomo-gateway/internal/requestlog"
+	"github.com/go-majordomo/majordomo-gateway/internal/secrets"
 	"github.com/go-majordomo/majordomo-gateway/internal/server"
 	"github.com/go-majordomo/majordomo-gateway/internal/storage"
 )
@@ -82,7 +83,7 @@ func Build(ctx context.Context, cfg *config.Config) (*Server, error) {
 	// ── Pricing ───────────────────────────────────────────────────────────────
 	pricingSvc := pricing.NewService(
 		cfg.Pricing.RemoteURL,
-		cfg.Pricing.FallbackFile,
+		cfg.Pricing.ModelCatalogFile,
 		cfg.Pricing.AliasesFile,
 		cfg.Pricing.RefreshInterval,
 	)
@@ -101,8 +102,44 @@ func Build(ctx context.Context, cfg *config.Config) (*Server, error) {
 		return nil, err
 	}
 
+	// ── Provider-key store + routing (encrypted upstream credentials) ─────────
+	// Provider-key management requires server-side encryption (ENCRYPTION_KEY) and
+	// works even with routing disabled, so operators can load keys before flipping
+	// ROUTING_ENABLED. Provider routing additionally needs ROUTING_ENABLED and is
+	// wired into the proxy handler via a functional option.
+	if cfg.Routing.Enabled && cfg.Secrets.EncryptionKey == "" {
+		logWriter.Close()
+		pricingSvc.Close()
+		return nil, fmt.Errorf("ROUTING_ENABLED=true requires ENCRYPTION_KEY to be set")
+	}
+
+	var handlerOpts []proxy.HandlerOption
+	var providerKeysController *controllers.ProviderKeysController
+	if cfg.Secrets.EncryptionKey != "" {
+		secretStore, err := secrets.NewAESStore(cfg.Secrets.EncryptionKey)
+		if err != nil {
+			logWriter.Close()
+			pricingSvc.Close()
+			return nil, fmt.Errorf("init secret store: %w", err)
+		}
+		providerKeyRepo := repositories.NewProviderKeyRepository(db)
+		providerKeysController = controllers.NewProviderKeysController(providerKeyRepo, secretStore)
+		slog.Info("provider-key management enabled")
+
+		if cfg.Routing.Enabled {
+			endpointHealthRepo := repositories.NewEndpointHealthRepository(db)
+			providerRouter := proxy.NewProviderRouter(pricingSvc, endpointHealthRepo, providerKeyRepo, pricingSvc)
+			handlerOpts = append(handlerOpts, proxy.WithProviderRouting(providerRouter, providerKeyRepo, secretStore))
+			slog.Info("provider routing enabled")
+		} else {
+			slog.Info("provider routing disabled (ROUTING_ENABLED=false); catalog powers cost attribution only")
+		}
+	} else {
+		slog.Info("ENCRYPTION_KEY not set — provider-key management and routing are disabled")
+	}
+
 	// ── Proxy Handler ─────────────────────────────────────────────────────────
-	proxyHandler := proxy.NewHandler(logWriter, pricingSvc, deprecatedSvc, resolver, cfg, bodyStore)
+	proxyHandler := proxy.NewHandler(logWriter, pricingSvc, deprecatedSvc, resolver, cfg, bodyStore, handlerOpts...)
 
 	// ── Controllers (admin/query API) ─────────────────────────────────────────
 	keysController := controllers.NewKeysController(apiKeyRepo)
@@ -113,7 +150,7 @@ func Build(ctx context.Context, cfg *config.Config) (*Server, error) {
 	}
 
 	// ── HTTP Server ───────────────────────────────────────────────────────────
-	srv := server.New(&cfg.Server, proxyHandler, logWriter, cfg.Admin.Token, keysController, usageController, metadataController)
+	srv := server.New(&cfg.Server, proxyHandler, logWriter, cfg.Admin.Token, keysController, usageController, metadataController, providerKeysController)
 
 	return &Server{
 		inner:     srv,

@@ -40,6 +40,7 @@ func New(
 	keys *controllers.KeysController,
 	usage *controllers.UsageController,
 	metadata *controllers.MetadataController,
+	providerKeys *controllers.ProviderKeysController,
 ) *Server {
 	s := &Server{
 		config:        cfg,
@@ -62,6 +63,11 @@ func New(
 			keys.RegisterRoutes(r)
 			usage.RegisterRoutes(r)
 			metadata.RegisterRoutes(r)
+			// Provider-key management is mounted only when server-side encryption
+			// is configured (ENCRYPTION_KEY set); nil otherwise.
+			if providerKeys != nil {
+				providerKeys.RegisterRoutes(r)
+			}
 		})
 		slog.Info("admin/query API enabled at /api/v1")
 	}

@@ -112,9 +112,10 @@ func (w *Writer) writeLog(log *models.RequestLog) {
 			status_code, error_message, raw_metadata, indexed_metadata,
 			body_s3_key, model_alias_found,
 			deprecated_model_redirected, original_model,
-			trace_id, span_path, span_name, span_id, parent_span_id
+			trace_id, span_path, span_name, span_id, parent_span_id,
+			routed_provider, routing_reason, routing_original_model
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38
 		)`
 
 	_, err = w.db.ExecContext(ctx, query,
@@ -128,6 +129,7 @@ func (w *Writer) writeLog(log *models.RequestLog) {
 		log.BodyS3Key, log.ModelAliasFound,
 		log.DeprecatedModelRedirected, log.OriginalModel,
 		log.TraceID, log.SpanPath, log.SpanName, log.SpanID, log.ParentSpanID,
+		log.RoutedProvider, log.RoutingReason, log.RoutingOriginalModel,
 	)
 	if err != nil {
 		slog.Error("failed to write request log", "error", err, "request_id", log.ID)

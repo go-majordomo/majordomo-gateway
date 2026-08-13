@@ -41,12 +41,37 @@ func TestResolveDatedModels(t *testing.T) {
 		"gemini-2.5-flash-lite-001", // Gemini -> alias
 	}
 	for _, m := range found {
-		if _, ok := s.resolve(m); !ok {
+		if _, ok := s.resolve("", m); !ok {
 			t.Errorf("resolve(%q) = not found, want found", m)
 		}
 	}
 
-	if _, ok := s.resolve("totally-unknown-model"); ok {
+	if _, ok := s.resolve("", "totally-unknown-model"); ok {
 		t.Errorf("resolve(unknown) = found, want not found")
+	}
+}
+
+func TestResolvePerProviderOverride(t *testing.T) {
+	s := &Service{
+		pricing: map[string]ModelPricing{
+			// Model-default (the "canonical" provider's price).
+			"deepseek-ai/DeepSeek-V4-Pro": {InputPricePerMillion: 2.1, OutputPricePerMillion: 4.4},
+		},
+		byProvider: map[string]map[string]ModelPricing{
+			"baseten": {"deepseek-ai/DeepSeek-V4-Pro": {InputPricePerMillion: 1.5, OutputPricePerMillion: 3.0}},
+		},
+	}
+
+	// Provider with an override resolves to the override.
+	if p, ok := s.resolve("baseten", "deepseek-ai/DeepSeek-V4-Pro"); !ok || p.InputPricePerMillion != 1.5 {
+		t.Errorf("baseten override = (%+v, %v), want input 1.5", p, ok)
+	}
+	// Provider without an override falls back to the model default.
+	if p, ok := s.resolve("together", "deepseek-ai/DeepSeek-V4-Pro"); !ok || p.InputPricePerMillion != 2.1 {
+		t.Errorf("together fallback = (%+v, %v), want input 2.1 (model default)", p, ok)
+	}
+	// Empty provider uses the model default.
+	if p, ok := s.resolve("", "deepseek-ai/DeepSeek-V4-Pro"); !ok || p.InputPricePerMillion != 2.1 {
+		t.Errorf("no-provider = (%+v, %v), want input 2.1", p, ok)
 	}
 }

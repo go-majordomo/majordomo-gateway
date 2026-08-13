@@ -64,6 +64,19 @@ spec:
                 secretKeyRef:
                   name: majordomo-secrets
                   key: ADMIN_TOKEN
+            # Provider routing (optional; off by default). To enable, set
+            # ENCRYPTION_KEY in the Secret (see secret.yaml) and uncomment all of:
+            # - name: ENCRYPTION_KEY
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: majordomo-secrets
+            #       key: ENCRYPTION_KEY
+            # - name: ROUTING_ENABLED
+            #   value: "true"
+            # - name: ROUTING_DEFAULT_REQUIRE_ZDR
+            #   value: "false"
+            # - name: ROUTING_DEFAULT_DATA_COLLECTION
+            #   value: "deny"
           livenessProbe:
             httpGet:
               path: /health

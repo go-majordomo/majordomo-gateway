@@ -22,7 +22,7 @@ RUN apk add --no-cache ca-certificates tzdata
 COPY --from=builder /app/gateway /app/gateway
 COPY --from=builder /app/gateway-cli /app/gateway-cli
 COPY --from=builder /app/gateway-mcp /app/gateway-mcp
-COPY pricing.json /app/pricing.json
+COPY model_catalog.json /app/model_catalog.json
 COPY model_aliases.json /app/model_aliases.json
 COPY deprecated_models.json /app/deprecated_models.json
 COPY migrations/ /app/migrations/

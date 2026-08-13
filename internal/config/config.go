@@ -16,6 +16,29 @@ type Config struct {
 	Metadata  MetadataConfig  `mapstructure:"metadata"`
 	BodyStore BodyStoreConfig `mapstructure:"body_store"`
 	Admin     AdminConfig     `mapstructure:"admin"`
+	Secrets   SecretsConfig   `mapstructure:"secrets"`
+	Routing   RoutingConfig   `mapstructure:"routing"`
+}
+
+// SecretsConfig holds the AES key used to encrypt stored provider credentials at
+// rest. When empty, provider-key management and provider routing are disabled.
+type SecretsConfig struct {
+	EncryptionKey string `mapstructure:"encryption_key"`
+}
+
+// RoutingConfig controls provider routing: mapping a virtual model slug to the
+// cheapest healthy provider endpoint that can serve it. Disabled by default so
+// the proxy behaves as a pure pass-through unless explicitly turned on.
+// Credentials come from the gateway's encrypted provider-key store.
+type RoutingConfig struct {
+	Enabled bool `mapstructure:"enabled"`
+
+	// Data-policy defaults, overridable per request by the X-Majordomo-ZDR and
+	// X-Majordomo-Data-Collection headers. DefaultDataCollection == "deny" requires
+	// no-data-collection endpoints by default; "" (or "allow") imposes no default
+	// requirement. DefaultRequireZDR requires a zero-data-retention endpoint.
+	DefaultDataCollection string `mapstructure:"default_data_collection"`
+	DefaultRequireZDR     bool   `mapstructure:"default_require_zdr"`
 }
 
 // BodyStoreConfig configures optional request/response body archival to object
@@ -81,7 +104,7 @@ type LoggingConfig struct {
 type PricingConfig struct {
 	RemoteURL            string        `mapstructure:"remote_url"`
 	RefreshInterval      time.Duration `mapstructure:"refresh_interval"`
-	FallbackFile         string        `mapstructure:"fallback_file"`
+	ModelCatalogFile     string        `mapstructure:"model_catalog_file"`
 	AliasesFile          string        `mapstructure:"aliases_file"`
 	DeprecatedModelsFile string        `mapstructure:"deprecated_models_file"`
 }
@@ -93,6 +116,9 @@ type ProvidersConfig struct {
 	Fireworks ProviderConfig `mapstructure:"fireworks"`
 	Together  ProviderConfig `mapstructure:"together"`
 	DeepSeek  ProviderConfig `mapstructure:"deepseek"`
+	Moonshot  ProviderConfig `mapstructure:"moonshot"`
+	Baseten   ProviderConfig `mapstructure:"baseten"`
+	Nebius    ProviderConfig `mapstructure:"nebius"`
 }
 
 type ProviderConfig struct {
@@ -138,7 +164,7 @@ func bindEnv(v *viper.Viper) {
 
 	v.BindEnv("pricing.remote_url", "PRICING_REMOTE_URL")
 	v.BindEnv("pricing.refresh_interval", "PRICING_REFRESH_INTERVAL")
-	v.BindEnv("pricing.fallback_file", "PRICING_FALLBACK_FILE")
+	v.BindEnv("pricing.model_catalog_file", "MODEL_CATALOG_FILE")
 	v.BindEnv("pricing.aliases_file", "PRICING_ALIASES_FILE")
 	v.BindEnv("pricing.deprecated_models_file", "DEPRECATED_MODELS_FILE")
 
@@ -148,11 +174,20 @@ func bindEnv(v *viper.Viper) {
 	v.BindEnv("providers.fireworks.base_url", "FIREWORKS_BASE_URL")
 	v.BindEnv("providers.together.base_url", "TOGETHER_BASE_URL")
 	v.BindEnv("providers.deepseek.base_url", "DEEPSEEK_BASE_URL")
+	v.BindEnv("providers.moonshot.base_url", "MOONSHOT_BASE_URL")
+	v.BindEnv("providers.baseten.base_url", "BASETEN_BASE_URL")
+	v.BindEnv("providers.nebius.base_url", "NEBIUS_BASE_URL")
 
 	v.BindEnv("metadata.hll_flush_interval", "METADATA_HLL_FLUSH_INTERVAL")
 	v.BindEnv("metadata.active_keys_cache_ttl", "METADATA_ACTIVE_KEYS_CACHE_TTL")
 
 	v.BindEnv("admin.token", "ADMIN_TOKEN")
+
+	v.BindEnv("secrets.encryption_key", "ENCRYPTION_KEY")
+
+	v.BindEnv("routing.enabled", "ROUTING_ENABLED")
+	v.BindEnv("routing.default_data_collection", "ROUTING_DEFAULT_DATA_COLLECTION")
+	v.BindEnv("routing.default_require_zdr", "ROUTING_DEFAULT_REQUIRE_ZDR")
 }
 
 func setDefaults(v *viper.Viper) {
@@ -179,7 +214,7 @@ func setDefaults(v *viper.Viper) {
 
 	v.SetDefault("pricing.remote_url", "https://www.llm-prices.com/current-v1.json")
 	v.SetDefault("pricing.refresh_interval", time.Hour)
-	v.SetDefault("pricing.fallback_file", "./pricing.json")
+	v.SetDefault("pricing.model_catalog_file", "./model_catalog.json")
 	v.SetDefault("pricing.aliases_file", "./model_aliases.json")
 	v.SetDefault("pricing.deprecated_models_file", "./deprecated_models.json")
 
@@ -189,9 +224,18 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("providers.fireworks.base_url", "https://api.fireworks.ai/inference")
 	v.SetDefault("providers.together.base_url", "https://api.together.xyz")
 	v.SetDefault("providers.deepseek.base_url", "https://api.deepseek.com")
+	v.SetDefault("providers.moonshot.base_url", "https://api.moonshot.ai")
+	v.SetDefault("providers.baseten.base_url", "https://inference.baseten.co")
+	v.SetDefault("providers.nebius.base_url", "https://api.studio.nebius.com")
 
 	v.SetDefault("metadata.hll_flush_interval", 60*time.Second)
 	v.SetDefault("metadata.active_keys_cache_ttl", 5*time.Minute)
 
 	v.SetDefault("admin.token", "")
+
+	v.SetDefault("secrets.encryption_key", "")
+
+	v.SetDefault("routing.enabled", false)
+	v.SetDefault("routing.default_data_collection", "")
+	v.SetDefault("routing.default_require_zdr", false)
 }

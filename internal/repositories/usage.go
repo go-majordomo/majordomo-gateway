@@ -100,7 +100,7 @@ func NewUsageRepository(db *sqlx.DB) *UsageRepository {
 	return &UsageRepository{db: db}
 }
 
-const requestListItemColumns = `id, majordomo_api_key_id, provider, model, requested_at, response_time_ms, input_tokens, output_tokens, cached_tokens, cache_creation_tokens, total_cost, status_code, error_message, trace_id`
+const requestListItemColumns = `id, majordomo_api_key_id, provider, model, requested_at, response_time_ms, input_tokens, output_tokens, cached_tokens, cache_creation_tokens, total_cost, status_code, error_message, trace_id, routed_provider`
 
 // GetUsageSummary returns aggregated usage totals for the given filter.
 func (r *UsageRepository) GetUsageSummary(ctx context.Context, filter *UsageFilter) (*models.UsageSummary, error) {
@@ -693,7 +693,8 @@ func (r *UsageRepository) GetRequestDetail(ctx context.Context, requestID uuid.U
 			status_code, error_message, raw_metadata, indexed_metadata,
 			body_s3_key, model_alias_found,
 			deprecated_model_redirected, original_model,
-			trace_id, span_path, span_name, span_id, parent_span_id, created_at
+			trace_id, span_path, span_name, span_id, parent_span_id,
+			routed_provider, routing_reason, routing_original_model, created_at
 		FROM llm_requests WHERE id = $1`
 
 	var (
@@ -711,7 +712,8 @@ func (r *UsageRepository) GetRequestDetail(ctx context.Context, requestID uuid.U
 		&log.StatusCode, &log.ErrorMessage, &rawMetadataJSON, &indexedMetadataJSON,
 		&log.BodyS3Key, &log.ModelAliasFound,
 		&log.DeprecatedModelRedirected, &log.OriginalModel,
-		&log.TraceID, &log.SpanPath, &log.SpanName, &log.SpanID, &log.ParentSpanID, &log.CreatedAt,
+		&log.TraceID, &log.SpanPath, &log.SpanName, &log.SpanID, &log.ParentSpanID,
+		&log.RoutedProvider, &log.RoutingReason, &log.RoutingOriginalModel, &log.CreatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
