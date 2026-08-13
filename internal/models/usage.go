@@ -145,6 +145,9 @@ type RequestListItem struct {
 	// TraceID is set when this request belongs to an agent run; a client can use it
 	// to deep-link the row to its run waterfall.
 	TraceID *string `json:"trace_id,omitempty" db:"trace_id"`
+	// RoutedProvider is set when the request was routed (x-majordomo-provider:
+	// majordomo) — the concrete upstream the slug was routed to.
+	RoutedProvider *string `json:"routed_provider,omitempty" db:"routed_provider"`
 }
 
 // RunListItem is one agent run/conversation in the runs list, with usage rolled up

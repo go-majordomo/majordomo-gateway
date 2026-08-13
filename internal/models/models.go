@@ -135,6 +135,14 @@ type RequestLog struct {
 	DeprecatedModelRedirected bool    `json:"deprecated_model_redirected" db:"deprecated_model_redirected"`
 	OriginalModel             *string `json:"original_model,omitempty" db:"original_model"`
 
+	// Provider-routing decision trace — populated only when the request was routed
+	// (x-majordomo-provider: majordomo). RoutedProvider is the chosen upstream,
+	// RoutingReason the human-readable rationale, and RoutingOriginalModel the
+	// canonical slug the client requested before the model was rewritten.
+	RoutedProvider       *string `json:"routed_provider,omitempty" db:"routed_provider"`
+	RoutingReason        *string `json:"routing_reason,omitempty" db:"routing_reason"`
+	RoutingOriginalModel *string `json:"routing_original_model,omitempty" db:"routing_original_model"`
+
 	// Agent-run observability (Tier 1) — populated only when the request carries an
 	// X-Majordomo-Trace-Id header. span_path is the canonical "/"-joined ancestor step
 	// names; span_id is the leaf's own id; parent_span_id is the deterministic id of the

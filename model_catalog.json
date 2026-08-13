@@ -1,0 +1,855 @@
+{
+  "_comment": "Single source of truth for model prices, routing endpoints, and provider data posture. providers.<p>: base_url, zdr, data_collection (provider-level), models{model_id: prices}. routes.<slug>: (provider, model) pairs that serve a canonical routable slug. Prices are synced to the authoritative llm_config. NOTE: moonshot/baseten/nebius are not in that config (added on request); their prices/model-ids are best-effort drafts. zdr/data_collection are conservative (false/allow) until curated.",
+  "providers": {
+    "anthropic": {
+      "base_url": "https://api.anthropic.com",
+      "zdr": false,
+      "data_collection": "allow",
+      "models": {
+        "claude-3.5-haiku": {
+          "input_price_per_million": 0.8,
+          "output_price_per_million": 4,
+          "cached_price_per_million": 0.08
+        },
+        "claude-3.7-sonnet": {
+          "input_price_per_million": 3,
+          "output_price_per_million": 15,
+          "cached_price_per_million": 0.3
+        },
+        "claude-opus-4": {
+          "input_price_per_million": 15,
+          "output_price_per_million": 75,
+          "cached_price_per_million": 1.5
+        },
+        "claude-opus-4-1": {
+          "input_price_per_million": 15,
+          "output_price_per_million": 75,
+          "cached_price_per_million": 1.5
+        },
+        "claude-4.5-haiku": {
+          "input_price_per_million": 1,
+          "output_price_per_million": 5,
+          "cached_price_per_million": 0.1
+        },
+        "claude-sonnet-4.5": {
+          "input_price_per_million": 3,
+          "output_price_per_million": 15,
+          "cached_price_per_million": 0.3
+        },
+        "claude-sonnet-4-6": {
+          "input_price_per_million": 3.0,
+          "output_price_per_million": 15.0,
+          "cached_price_per_million": 0.3
+        },
+        "claude-sonnet-4.5-200k": {
+          "input_price_per_million": 6,
+          "output_price_per_million": 22.5,
+          "cached_price_per_million": 0.6
+        },
+        "claude-opus-5": {
+          "input_price_per_million": 5.0,
+          "output_price_per_million": 25.0,
+          "cached_price_per_million": 0.5
+        },
+        "claude-opus-4-8": {
+          "input_price_per_million": 5.0,
+          "output_price_per_million": 25.0,
+          "cached_price_per_million": 0.5
+        },
+        "claude-opus-4-7": {
+          "input_price_per_million": 5.0,
+          "output_price_per_million": 25.0,
+          "cached_price_per_million": 0.5
+        },
+        "claude-haiku-4-5": {
+          "input_price_per_million": 1,
+          "output_price_per_million": 5,
+          "cached_price_per_million": 0.1
+        },
+        "claude-opus-4-6": {
+          "input_price_per_million": 5.0,
+          "output_price_per_million": 25.0,
+          "cached_price_per_million": 0.5
+        },
+        "claude-opus-4-5": {
+          "input_price_per_million": 5,
+          "output_price_per_million": 25,
+          "cached_price_per_million": 0.5
+        },
+        "claude-fable-5": {
+          "input_price_per_million": 10.0,
+          "output_price_per_million": 50.0,
+          "cached_price_per_million": 1.0
+        },
+        "claude-sonnet-5": {
+          "input_price_per_million": 3.0,
+          "output_price_per_million": 15.0,
+          "cached_price_per_million": 0.3
+        },
+        "claude-opus-4-5-20251101": {
+          "input_price_per_million": 5.0,
+          "output_price_per_million": 25.0,
+          "cached_price_per_million": 0.5
+        },
+        "claude-sonnet-4-5-20250929": {
+          "input_price_per_million": 3.0,
+          "output_price_per_million": 15.0,
+          "cached_price_per_million": 0.3
+        },
+        "claude-haiku-4-5-20251001": {
+          "input_price_per_million": 1.0,
+          "output_price_per_million": 5.0,
+          "cached_price_per_million": 0.1
+        },
+        "claude-opus-4-1-20250805": {
+          "input_price_per_million": 15.0,
+          "output_price_per_million": 75.0,
+          "cached_price_per_million": 1.5
+        },
+        "claude-opus-4-20250514": {
+          "input_price_per_million": 15.0,
+          "output_price_per_million": 75.0,
+          "cached_price_per_million": 1.5
+        },
+        "claude-sonnet-4-20250514": {
+          "input_price_per_million": 3.0,
+          "output_price_per_million": 15.0,
+          "cached_price_per_million": 0.3
+        }
+      }
+    },
+    "openai": {
+      "base_url": "https://api.openai.com",
+      "zdr": false,
+      "data_collection": "allow",
+      "models": {
+        "gpt-5.4": {
+          "input_price_per_million": 2.5,
+          "output_price_per_million": 15.0,
+          "cached_price_per_million": 0.25
+        },
+        "gpt-5.4-mini": {
+          "input_price_per_million": 0.75,
+          "output_price_per_million": 4.5,
+          "cached_price_per_million": 0.075
+        },
+        "gpt-5.4-nano": {
+          "input_price_per_million": 0.2,
+          "output_price_per_million": 1.25,
+          "cached_price_per_million": 0.02
+        },
+        "gpt-5.4-pro": {
+          "input_price_per_million": 30.0,
+          "output_price_per_million": 180.0,
+          "cached_price_per_million": 3.0
+        },
+        "gpt-4o": {
+          "input_price_per_million": 2.5,
+          "output_price_per_million": 10,
+          "cached_price_per_million": 1.25
+        },
+        "gpt-4o-mini": {
+          "input_price_per_million": 0.15,
+          "output_price_per_million": 0.6,
+          "cached_price_per_million": 0.075
+        },
+        "gpt-4.1": {
+          "input_price_per_million": 2.0,
+          "output_price_per_million": 8.0,
+          "cached_price_per_million": 0.5
+        },
+        "gpt-4.1-mini": {
+          "input_price_per_million": 0.4,
+          "output_price_per_million": 1.6,
+          "cached_price_per_million": 0.1
+        },
+        "gpt-4.1-nano": {
+          "input_price_per_million": 0.1,
+          "output_price_per_million": 0.4,
+          "cached_price_per_million": 0.025
+        },
+        "o1": {
+          "input_price_per_million": 15,
+          "output_price_per_million": 60,
+          "cached_price_per_million": 0
+        },
+        "o1-mini": {
+          "input_price_per_million": 1.1,
+          "output_price_per_million": 4.4,
+          "cached_price_per_million": 0.55
+        },
+        "o3": {
+          "input_price_per_million": 2.0,
+          "output_price_per_million": 8.0,
+          "cached_price_per_million": 0.5
+        },
+        "o3-mini": {
+          "input_price_per_million": 1.1,
+          "output_price_per_million": 4.4,
+          "cached_price_per_million": 0.55
+        },
+        "o4-mini": {
+          "input_price_per_million": 1.1,
+          "output_price_per_million": 4.4,
+          "cached_price_per_million": 0.275
+        },
+        "gpt-5-nano": {
+          "input_price_per_million": 0.05,
+          "output_price_per_million": 0.4,
+          "cached_price_per_million": 0.005
+        },
+        "gpt-5-mini": {
+          "input_price_per_million": 0.25,
+          "output_price_per_million": 2.0,
+          "cached_price_per_million": 0.025
+        },
+        "gpt-5": {
+          "input_price_per_million": 1.25,
+          "output_price_per_million": 10.0,
+          "cached_price_per_million": 0.125
+        },
+        "gpt-5-pro": {
+          "input_price_per_million": 15,
+          "output_price_per_million": 120,
+          "cached_price_per_million": 0
+        },
+        "gpt-5.1": {
+          "input_price_per_million": 1.25,
+          "output_price_per_million": 10,
+          "cached_price_per_million": 0.125
+        },
+        "gpt-5.2": {
+          "input_price_per_million": 1.75,
+          "output_price_per_million": 14,
+          "cached_price_per_million": 0.175
+        },
+        "gpt-5.5": {
+          "input_price_per_million": 5.0,
+          "output_price_per_million": 30.0,
+          "cached_price_per_million": 0.5
+        },
+        "gpt-5.6-sol": {
+          "input_price_per_million": 5.0,
+          "output_price_per_million": 30.0,
+          "cached_price_per_million": 0.5
+        },
+        "gpt-5.6-terra": {
+          "input_price_per_million": 2.5,
+          "output_price_per_million": 15.0,
+          "cached_price_per_million": 0.25
+        },
+        "gpt-5.6-luna": {
+          "input_price_per_million": 1.0,
+          "output_price_per_million": 6.0,
+          "cached_price_per_million": 0.1
+        }
+      }
+    },
+    "gemini": {
+      "base_url": "https://generativelanguage.googleapis.com",
+      "zdr": false,
+      "data_collection": "allow",
+      "models": {
+        "gemini-1.5-flash": {
+          "input_price_per_million": 0.075,
+          "output_price_per_million": 0.3,
+          "cached_price_per_million": 0
+        },
+        "gemini-1.5-flash-128k": {
+          "input_price_per_million": 0.15,
+          "output_price_per_million": 0.6,
+          "cached_price_per_million": 0
+        },
+        "gemini-1.5-flash-8b": {
+          "input_price_per_million": 0.0375,
+          "output_price_per_million": 0.15,
+          "cached_price_per_million": 0
+        },
+        "gemini-1.5-flash-8b-128k": {
+          "input_price_per_million": 0.075,
+          "output_price_per_million": 0.3,
+          "cached_price_per_million": 0
+        },
+        "gemini-1.5-pro": {
+          "input_price_per_million": 1.25,
+          "output_price_per_million": 5,
+          "cached_price_per_million": 0
+        },
+        "gemini-1.5-pro-128k": {
+          "input_price_per_million": 2.5,
+          "output_price_per_million": 10,
+          "cached_price_per_million": 0
+        },
+        "gemini-2.0-flash": {
+          "input_price_per_million": 0.1,
+          "output_price_per_million": 0.4,
+          "cached_price_per_million": 0
+        },
+        "gemini-2.0-flash-lite": {
+          "input_price_per_million": 0.075,
+          "output_price_per_million": 0.3,
+          "cached_price_per_million": 0
+        },
+        "gemini-2.5-flash": {
+          "input_price_per_million": 0.3,
+          "output_price_per_million": 2.5,
+          "cached_price_per_million": 0.075
+        },
+        "gemini-2.5-flash-lite": {
+          "input_price_per_million": 0.1,
+          "output_price_per_million": 0.4,
+          "cached_price_per_million": 0.025
+        },
+        "gemini-2.5-pro": {
+          "input_price_per_million": 1.25,
+          "output_price_per_million": 10.0,
+          "cached_price_per_million": 0.3125
+        },
+        "gemini-2.5-pro-200k": {
+          "input_price_per_million": 2.5,
+          "output_price_per_million": 15,
+          "cached_price_per_million": 0.25
+        },
+        "gemini-3-flash-preview": {
+          "input_price_per_million": 0.5,
+          "output_price_per_million": 3.0,
+          "cached_price_per_million": 0.125
+        },
+        "gemini-3.1-flash-lite-preview": {
+          "input_price_per_million": 0.25,
+          "output_price_per_million": 1.5,
+          "cached_price_per_million": 0
+        },
+        "gemini-3-pro-preview": {
+          "input_price_per_million": 2,
+          "output_price_per_million": 12,
+          "cached_price_per_million": 0
+        },
+        "gemini-3.1-pro-preview": {
+          "input_price_per_million": 2.0,
+          "output_price_per_million": 12.0,
+          "cached_price_per_million": 0.5
+        },
+        "gemini-3.6-flash": {
+          "input_price_per_million": 1.5,
+          "output_price_per_million": 7.5,
+          "cached_price_per_million": 0.375
+        },
+        "gemini-3.5-flash": {
+          "input_price_per_million": 1.5,
+          "output_price_per_million": 9.0,
+          "cached_price_per_million": 0.375
+        },
+        "gemini-3.5-flash-lite": {
+          "input_price_per_million": 0.3,
+          "output_price_per_million": 2.5,
+          "cached_price_per_million": 0.075
+        },
+        "gemini-3.1-flash-lite": {
+          "input_price_per_million": 0.25,
+          "output_price_per_million": 1.5,
+          "cached_price_per_million": 0.0625
+        }
+      }
+    },
+    "deepseek": {
+      "base_url": "https://api.deepseek.com",
+      "zdr": false,
+      "data_collection": "allow",
+      "models": {
+        "deepseek-chat": {
+          "input_price_per_million": 0.28,
+          "output_price_per_million": 0.42,
+          "cached_price_per_million": 0.028
+        },
+        "deepseek-reasoner": {
+          "input_price_per_million": 0.28,
+          "output_price_per_million": 1.68,
+          "cached_price_per_million": 0.028
+        },
+        "deepseek-v4-pro": {
+          "input_price_per_million": 0.435,
+          "output_price_per_million": 0.87,
+          "cached_price_per_million": 0.0435
+        },
+        "deepseek-v4-flash": {
+          "input_price_per_million": 0.14,
+          "output_price_per_million": 0.28,
+          "cached_price_per_million": 0.014
+        }
+      }
+    },
+    "moonshot": {
+      "base_url": "https://api.moonshot.ai",
+      "zdr": false,
+      "data_collection": "allow",
+      "models": {
+        "kimi-k2.6": {
+          "input_price_per_million": 0.9,
+          "output_price_per_million": 3.8,
+          "cached_price_per_million": 0
+        },
+        "kimi-k3": {
+          "input_price_per_million": 2.8,
+          "output_price_per_million": 14.0,
+          "cached_price_per_million": 0
+        }
+      }
+    },
+    "cohere": {
+      "base_url": "",
+      "zdr": false,
+      "data_collection": "allow",
+      "models": {
+        "command-a-03-2025": {
+          "input_price_per_million": 2.5,
+          "output_price_per_million": 10.0,
+          "cached_price_per_million": 0
+        },
+        "command-r-plus-08-2024": {
+          "input_price_per_million": 2.5,
+          "output_price_per_million": 10.0,
+          "cached_price_per_million": 0
+        },
+        "command-r-08-2024": {
+          "input_price_per_million": 0.5,
+          "output_price_per_million": 1.5,
+          "cached_price_per_million": 0
+        },
+        "command-r7b-12-2024": {
+          "input_price_per_million": 0.0375,
+          "output_price_per_million": 0.15,
+          "cached_price_per_million": 0
+        }
+      }
+    },
+    "bedrock-mantle": {
+      "base_url": "",
+      "zdr": false,
+      "data_collection": "allow",
+      "models": {
+        "anthropic.claude-opus-4-7-v1:0": {
+          "input_price_per_million": 5,
+          "output_price_per_million": 25,
+          "cached_price_per_million": 0.5
+        },
+        "anthropic.claude-sonnet-4-6-v1:0": {
+          "input_price_per_million": 3,
+          "output_price_per_million": 15,
+          "cached_price_per_million": 0.3
+        },
+        "anthropic.claude-opus-4-6-v1:0": {
+          "input_price_per_million": 5,
+          "output_price_per_million": 25,
+          "cached_price_per_million": 0.5
+        },
+        "anthropic.claude-opus-4-5-v1:0": {
+          "input_price_per_million": 5,
+          "output_price_per_million": 25,
+          "cached_price_per_million": 0.5
+        },
+        "anthropic.claude-haiku-4-5-v1:0": {
+          "input_price_per_million": 1,
+          "output_price_per_million": 5,
+          "cached_price_per_million": 0.1
+        },
+        "anthropic.claude-sonnet-4-5-v1:0": {
+          "input_price_per_million": 3,
+          "output_price_per_million": 15,
+          "cached_price_per_million": 0.3
+        },
+        "anthropic.claude-sonnet-4-v1:0": {
+          "input_price_per_million": 3,
+          "output_price_per_million": 15,
+          "cached_price_per_million": 0.3
+        },
+        "anthropic.claude-opus-5": {
+          "input_price_per_million": 5.0,
+          "output_price_per_million": 25.0,
+          "cached_price_per_million": 0.5
+        },
+        "anthropic.claude-opus-4-8": {
+          "input_price_per_million": 5.0,
+          "output_price_per_million": 25.0,
+          "cached_price_per_million": 0.5
+        },
+        "anthropic.claude-opus-4-7": {
+          "input_price_per_million": 5.0,
+          "output_price_per_million": 25.0,
+          "cached_price_per_million": 0.5
+        },
+        "anthropic.claude-haiku-4-5": {
+          "input_price_per_million": 1.0,
+          "output_price_per_million": 5.0,
+          "cached_price_per_million": 0.1
+        }
+      }
+    },
+    "bedrock": {
+      "base_url": "",
+      "zdr": false,
+      "data_collection": "allow",
+      "models": {
+        "moonshotai.kimi-k2-thinking-v1:0": {
+          "input_price_per_million": 0.6,
+          "output_price_per_million": 2.5,
+          "cached_price_per_million": 0
+        },
+        "moonshotai.kimi-k2.5-v1:0": {
+          "input_price_per_million": 0.6,
+          "output_price_per_million": 3,
+          "cached_price_per_million": 0
+        },
+        "nvidia.nemotron-nano-2-v1:0": {
+          "input_price_per_million": 0.06,
+          "output_price_per_million": 0.23,
+          "cached_price_per_million": 0
+        },
+        "nvidia.nemotron-nano-2-vl-v1:0": {
+          "input_price_per_million": 0.2,
+          "output_price_per_million": 0.6,
+          "cached_price_per_million": 0
+        },
+        "nvidia.nemotron-3-nano-30b-a3b-v1:0": {
+          "input_price_per_million": 0.06,
+          "output_price_per_million": 0.24,
+          "cached_price_per_million": 0
+        },
+        "nvidia.nemotron-3-super-120b-a12b-v1:0": {
+          "input_price_per_million": 0.15,
+          "output_price_per_million": 0.65,
+          "cached_price_per_million": 0
+        },
+        "meta.llama4-maverick-17b-instruct-v1:0": {
+          "input_price_per_million": 0.24,
+          "output_price_per_million": 0.97,
+          "cached_price_per_million": 0
+        },
+        "meta.llama4-scout-17b-instruct-v1:0": {
+          "input_price_per_million": 0.17,
+          "output_price_per_million": 0.66,
+          "cached_price_per_million": 0
+        },
+        "deepseek.r1-v1:0": {
+          "input_price_per_million": 1.35,
+          "output_price_per_million": 5.4,
+          "cached_price_per_million": 0
+        },
+        "deepseek.v3-2-v1:0": {
+          "input_price_per_million": 0.62,
+          "output_price_per_million": 1.85,
+          "cached_price_per_million": 0
+        },
+        "moonshot.kimi-k2-thinking": {
+          "input_price_per_million": 0.6,
+          "output_price_per_million": 2.5,
+          "cached_price_per_million": 0
+        },
+        "moonshotai.kimi-k2.5": {
+          "input_price_per_million": 0.6,
+          "output_price_per_million": 3.0,
+          "cached_price_per_million": 0
+        },
+        "nvidia.nemotron-nano-12b-v2": {
+          "input_price_per_million": 0.06,
+          "output_price_per_million": 0.23,
+          "cached_price_per_million": 0
+        },
+        "nvidia.nemotron-nano-3-30b": {
+          "input_price_per_million": 0.06,
+          "output_price_per_million": 0.24,
+          "cached_price_per_million": 0
+        },
+        "nvidia.nemotron-super-3-120b": {
+          "input_price_per_million": 0.15,
+          "output_price_per_million": 0.65,
+          "cached_price_per_million": 0
+        },
+        "us.meta.llama4-maverick-17b-instruct-v1:0": {
+          "input_price_per_million": 0.24,
+          "output_price_per_million": 0.97,
+          "cached_price_per_million": 0
+        },
+        "us.meta.llama4-scout-17b-instruct-v1:0": {
+          "input_price_per_million": 0.17,
+          "output_price_per_million": 0.66,
+          "cached_price_per_million": 0
+        },
+        "us.deepseek.r1-v1:0": {
+          "input_price_per_million": 1.35,
+          "output_price_per_million": 5.4,
+          "cached_price_per_million": 0
+        },
+        "deepseek.v3.2": {
+          "input_price_per_million": 0.62,
+          "output_price_per_million": 1.85,
+          "cached_price_per_million": 0
+        }
+      }
+    },
+    "fireworks": {
+      "base_url": "https://api.fireworks.ai/inference",
+      "zdr": false,
+      "data_collection": "allow",
+      "models": {
+        "accounts/fireworks/models/deepseek-v4-pro": {
+          "input_price_per_million": 1.74,
+          "output_price_per_million": 3.48,
+          "cached_price_per_million": 0
+        },
+        "accounts/fireworks/models/kimi-k2p5": {
+          "input_price_per_million": 0.6,
+          "output_price_per_million": 3.0,
+          "cached_price_per_million": 0
+        },
+        "accounts/fireworks/models/kimi-k2p6": {
+          "input_price_per_million": 0.95,
+          "output_price_per_million": 4.0,
+          "cached_price_per_million": 0
+        },
+        "accounts/fireworks/models/glm-5p1": {
+          "input_price_per_million": 1.4,
+          "output_price_per_million": 4.4,
+          "cached_price_per_million": 0
+        },
+        "accounts/fireworks/models/kimi-k3": {
+          "input_price_per_million": 3.0,
+          "output_price_per_million": 15.0,
+          "cached_price_per_million": 0.3
+        },
+        "accounts/fireworks/models/glm-5p2": {
+          "input_price_per_million": 1.4,
+          "output_price_per_million": 4.4,
+          "cached_price_per_million": 0.14
+        },
+        "accounts/fireworks/models/inkling": {
+          "input_price_per_million": 1.0,
+          "output_price_per_million": 4.05,
+          "cached_price_per_million": 0.17
+        }
+      }
+    },
+    "together": {
+      "base_url": "https://api.together.xyz",
+      "zdr": false,
+      "data_collection": "allow",
+      "models": {
+        "deepseek-ai/DeepSeek-V4-Pro": {
+          "input_price_per_million": 2.1,
+          "output_price_per_million": 4.4,
+          "cached_price_per_million": 0
+        },
+        "moonshotai/Kimi-K2.5": {
+          "input_price_per_million": 0.5,
+          "output_price_per_million": 2.8,
+          "cached_price_per_million": 0
+        },
+        "moonshotai/Kimi-K2.6": {
+          "input_price_per_million": 1.2,
+          "output_price_per_million": 4.5,
+          "cached_price_per_million": 0
+        },
+        "moonshotai/Kimi-K3": {
+          "input_price_per_million": 3.0,
+          "output_price_per_million": 15.0,
+          "cached_price_per_million": 0.3
+        },
+        "Qwen/Qwen3.6-Plus": {
+          "input_price_per_million": 0.5,
+          "output_price_per_million": 3.0,
+          "cached_price_per_million": 0
+        },
+        "Qwen/Qwen3.5-9B": {
+          "input_price_per_million": 0.1,
+          "output_price_per_million": 0.15,
+          "cached_price_per_million": 0
+        },
+        "Qwen/Qwen3-235B-A22B-fp8-tput": {
+          "input_price_per_million": 0.2,
+          "output_price_per_million": 0.6,
+          "cached_price_per_million": 0
+        },
+        "zai-org/GLM-5.1": {
+          "input_price_per_million": 1.4,
+          "output_price_per_million": 4.4,
+          "cached_price_per_million": 0
+        },
+        "zai-org/GLM-5.2": {
+          "input_price_per_million": 1.4,
+          "output_price_per_million": 4.4,
+          "cached_price_per_million": 0.26
+        },
+        "thinkingmachines/Inkling": {
+          "input_price_per_million": 1.0,
+          "output_price_per_million": 4.05,
+          "cached_price_per_million": 0.17
+        },
+        "zai-org/GLM-5": {
+          "input_price_per_million": 1.0,
+          "output_price_per_million": 3.2,
+          "cached_price_per_million": 0
+        }
+      }
+    },
+    "baseten": {
+      "base_url": "https://inference.baseten.co",
+      "zdr": false,
+      "data_collection": "allow",
+      "models": {
+        "deepseek-ai/DeepSeek-V4-Pro": {
+          "input_price_per_million": 1.5,
+          "output_price_per_million": 3.0,
+          "cached_price_per_million": 0
+        },
+        "moonshotai/Kimi-K2.6": {
+          "input_price_per_million": 1.1,
+          "output_price_per_million": 4.3,
+          "cached_price_per_million": 0
+        },
+        "moonshotai/Kimi-K3": {
+          "input_price_per_million": 2.9,
+          "output_price_per_million": 14.5,
+          "cached_price_per_million": 0
+        },
+        "zai-org/GLM-5.1": {
+          "input_price_per_million": 1.35,
+          "output_price_per_million": 4.3,
+          "cached_price_per_million": 0
+        },
+        "zai-org/GLM-5.2": {
+          "input_price_per_million": 1.35,
+          "output_price_per_million": 4.3,
+          "cached_price_per_million": 0
+        }
+      }
+    },
+    "nebius": {
+      "base_url": "https://api.studio.nebius.com",
+      "zdr": false,
+      "data_collection": "allow",
+      "models": {
+        "deepseek-ai/DeepSeek-V4-Pro": {
+          "input_price_per_million": 1.6,
+          "output_price_per_million": 3.2,
+          "cached_price_per_million": 0
+        },
+        "zai-org/GLM-5.1": {
+          "input_price_per_million": 1.4,
+          "output_price_per_million": 4.4,
+          "cached_price_per_million": 0
+        },
+        "zai-org/GLM-5.2": {
+          "input_price_per_million": 1.4,
+          "output_price_per_million": 4.4,
+          "cached_price_per_million": 0.26
+        }
+      }
+    }
+  },
+  "routes": {
+    "deepseek-v4-pro": [
+      {
+        "provider": "deepseek",
+        "model": "deepseek-v4-pro"
+      },
+      {
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/deepseek-v4-pro"
+      },
+      {
+        "provider": "together",
+        "model": "deepseek-ai/DeepSeek-V4-Pro"
+      },
+      {
+        "provider": "baseten",
+        "model": "deepseek-ai/DeepSeek-V4-Pro"
+      },
+      {
+        "provider": "nebius",
+        "model": "deepseek-ai/DeepSeek-V4-Pro"
+      }
+    ],
+    "kimi-k2.6": [
+      {
+        "provider": "moonshot",
+        "model": "kimi-k2.6"
+      },
+      {
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/kimi-k2p6"
+      },
+      {
+        "provider": "together",
+        "model": "moonshotai/Kimi-K2.6"
+      },
+      {
+        "provider": "baseten",
+        "model": "moonshotai/Kimi-K2.6"
+      }
+    ],
+    "kimi-k3": [
+      {
+        "provider": "moonshot",
+        "model": "kimi-k3"
+      },
+      {
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/kimi-k3"
+      },
+      {
+        "provider": "together",
+        "model": "moonshotai/Kimi-K3"
+      },
+      {
+        "provider": "baseten",
+        "model": "moonshotai/Kimi-K3"
+      }
+    ],
+    "glm-5.1": [
+      {
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/glm-5p1"
+      },
+      {
+        "provider": "together",
+        "model": "zai-org/GLM-5.1"
+      },
+      {
+        "provider": "baseten",
+        "model": "zai-org/GLM-5.1"
+      },
+      {
+        "provider": "nebius",
+        "model": "zai-org/GLM-5.1"
+      }
+    ],
+    "glm-5.2": [
+      {
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/glm-5p2"
+      },
+      {
+        "provider": "together",
+        "model": "zai-org/GLM-5.2"
+      },
+      {
+        "provider": "baseten",
+        "model": "zai-org/GLM-5.2"
+      },
+      {
+        "provider": "nebius",
+        "model": "zai-org/GLM-5.2"
+      }
+    ],
+    "inkling": [
+      {
+        "provider": "fireworks",
+        "model": "accounts/fireworks/models/inkling"
+      },
+      {
+        "provider": "together",
+        "model": "thinkingmachines/Inkling"
+      }
+    ]
+  }
+}

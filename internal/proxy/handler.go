@@ -3,6 +3,7 @@ package proxy
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,6 +18,7 @@ import (
 	"github.com/go-majordomo/majordomo-gateway/internal/models"
 	"github.com/go-majordomo/majordomo-gateway/internal/pricing"
 	"github.com/go-majordomo/majordomo-gateway/internal/provider"
+	"github.com/go-majordomo/majordomo-gateway/internal/secrets"
 	"github.com/go-majordomo/majordomo-gateway/internal/spanid"
 	"github.com/go-majordomo/majordomo-gateway/internal/storage"
 	"github.com/google/uuid"
@@ -39,12 +41,25 @@ type Handler struct {
 	// Optional request/response body archival to object storage. nil when disabled.
 	bodyStore     storage.Store
 	bodyKeyPrefix string
+
+	// Provider routing — nil unless routing is enabled via WithProviderRouting.
+	// providerRouter selects an endpoint; providerKeys resolves the stored
+	// (encrypted) credential; secretStore decrypts it before injection.
+	providerRouter *ProviderRouter
+	providerKeys   ProviderKeyResolver
+	secretStore    secrets.SecretStore
 }
 
 // ProviderKeyInfo contains hashed provider API key information.
 type ProviderKeyInfo struct {
 	Hash  *string
 	Alias *string
+}
+
+// ProviderKeyResolver fetches a stored (encrypted) provider key for injection
+// during routing. Satisfied by *repositories.ProviderKeyRepository.
+type ProviderKeyResolver interface {
+	GetKey(ctx context.Context, provider string) (*models.ProviderAPIKey, error)
 }
 
 func NewHandler(
@@ -54,6 +69,7 @@ func NewHandler(
 	resolver *auth.Resolver,
 	cfg *config.Config,
 	bodyStore storage.Store,
+	opts ...HandlerOption,
 ) *Handler {
 	providers := map[provider.Provider]string{
 		provider.ProviderOpenAI:    cfg.Providers.OpenAI.BaseURL,
@@ -62,9 +78,12 @@ func NewHandler(
 		provider.ProviderFireworks: cfg.Providers.Fireworks.BaseURL,
 		provider.ProviderTogether:  cfg.Providers.Together.BaseURL,
 		provider.ProviderDeepSeek:  cfg.Providers.DeepSeek.BaseURL,
+		provider.ProviderMoonshot:  cfg.Providers.Moonshot.BaseURL,
+		provider.ProviderBaseten:   cfg.Providers.Baseten.BaseURL,
+		provider.ProviderNebius:    cfg.Providers.Nebius.BaseURL,
 	}
 
-	return &Handler{
+	h := &Handler{
 		upstream:         NewUpstreamClient(cfg.Server.UpstreamTimeout, cfg.Server.StreamHeaderTimeout),
 		storage:          store,
 		pricing:          pricingSvc,
@@ -75,6 +94,10 @@ func NewHandler(
 		bodyStore:        bodyStore,
 		bodyKeyPrefix:    cfg.BodyStore.KeyPrefix,
 	}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -163,6 +186,59 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Provider routing: when the caller opts in with x-majordomo-provider: majordomo
+	// on the OpenAI-compatible surface, a virtual model slug is routed to the
+	// cheapest healthy provider endpoint that can serve it. A concrete provider pin
+	// or an absent header follows the exact pass-through path unchanged; non-OpenAI
+	// dialects are out of v1 routing scope (no request translation for routed traffic).
+	var routeDecision *RouteDecision
+	if h.providerRouter != nil && shouldConsiderRouting(headers, providerInfo.Provider) {
+		requestedModel := provider.GetParser(providerInfo.Provider).ExtractModel(upstreamBody)
+		decision, err := h.providerRouter.Route(ctx, requestedModel, h.resolveDataPolicy(headers))
+		if err != nil {
+			// Model is in the catalog but no endpoint is usable — either none is
+			// credentialed or none satisfies the data policy. Surface a clear error
+			// rather than forwarding the slug to the path-detected provider.
+			slog.Warn("routing: no usable endpoint", "model", requestedModel, "error", err, "request_id", requestID)
+			msg := fmt.Sprintf("no configured provider can serve model %q", requestedModel)
+			if errors.Is(err, ErrNoCompliantEndpoint) {
+				msg = fmt.Sprintf("no provider for model %q satisfies the requested data policy", requestedModel)
+			}
+			httputil.WriteJSONError(w, http.StatusBadGateway, msg)
+			return
+		}
+		if decision == nil {
+			// Routing was requested but the model is not a routable catalog slug.
+			// There is no real upstream to fall through to, so surface a clear error
+			// rather than forwarding the slug to the path-detected surface (OpenAI).
+			slog.Warn("routing: model not routable", "model", requestedModel, "request_id", requestID)
+			httputil.WriteJSONError(w, http.StatusBadRequest, fmt.Sprintf("model %q is not routable; set x-majordomo-provider to a concrete provider or request a routable model slug", requestedModel))
+			return
+		}
+		key, err := h.resolveRoutedCredential(ctx, decision.Provider)
+		if err != nil {
+			slog.Error("routing: failed to resolve provider credential", "provider", decision.Provider, "error", err, "request_id", requestID)
+			httputil.WriteJSONError(w, http.StatusBadGateway, "failed to resolve provider credential for routed request")
+			return
+		}
+		overridden, err := OverrideModel(upstreamBody, decision.ProviderModelID)
+		if err != nil {
+			slog.Error("routing: failed to override model", "error", err, "request_id", requestID)
+			httputil.WriteJSONError(w, http.StatusInternalServerError, "failed to prepare routed request")
+			return
+		}
+		upstreamBody = overridden
+		providerInfo.Provider = provider.Provider(decision.Provider)
+		baseURL = decision.BaseURL
+		r.Header.Set("Authorization", "Bearer "+key)
+		// Tell the client which concrete provider served the routed request and the
+		// provider-native model id it was rewritten to (not the slug). Set before any
+		// WriteHeader; copyResponseHeaders only Adds, so these survive to the client.
+		w.Header().Set("X-Majordomo-Routed-Provider", decision.Provider)
+		w.Header().Set("X-Majordomo-Routed-Model", decision.ProviderModelID)
+		routeDecision = decision
+	}
+
 	// Translate request if needed (e.g., OpenAI format → Anthropic format)
 	if provider.IsTranslationRequired(providerInfo.Provider) {
 		translated, newPath, err := provider.TranslateOpenAIToAnthropic(body)
@@ -241,7 +317,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				ResponseTime: streamResp.ResponseTime,
 			}
 
-			h.logAndFinish(r, requestID, apiKeyInfo, providerKeyInfo, providerInfo, body, resp, requestedAt, respondedAt, headers, deprecatedModelRedirected, deprecatedOriginalModel)
+			h.logAndFinish(r, requestID, apiKeyInfo, providerKeyInfo, providerInfo, body, resp, requestedAt, respondedAt, headers, deprecatedModelRedirected, deprecatedOriginalModel, routeDecision)
 			return
 		}
 
@@ -306,7 +382,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(resp.StatusCode)
 	w.Write(responseBody)
 
-	h.logAndFinish(r, requestID, apiKeyInfo, providerKeyInfo, providerInfo, body, resp, requestedAt, respondedAt, headers, deprecatedModelRedirected, deprecatedOriginalModel)
+	h.logAndFinish(r, requestID, apiKeyInfo, providerKeyInfo, providerInfo, body, resp, requestedAt, respondedAt, headers, deprecatedModelRedirected, deprecatedOriginalModel, routeDecision)
 }
 
 // logAndFinish extracts session metadata from request headers and dispatches
@@ -323,8 +399,9 @@ func (h *Handler) logAndFinish(
 	headers map[string]string,
 	deprecatedModelRedirected bool,
 	deprecatedOriginalModel string,
+	routeDecision *RouteDecision,
 ) {
-	go h.logRequest(context.Background(), requestID, apiKeyInfo, providerKeyInfo, providerInfo, r, reqBody, resp, requestedAt, respondedAt, headers, deprecatedModelRedirected, deprecatedOriginalModel)
+	go h.logRequest(context.Background(), requestID, apiKeyInfo, providerKeyInfo, providerInfo, r, reqBody, resp, requestedAt, respondedAt, headers, deprecatedModelRedirected, deprecatedOriginalModel, routeDecision)
 }
 
 func (h *Handler) logRequest(
@@ -340,6 +417,7 @@ func (h *Handler) logRequest(
 	customHeaders map[string]string,
 	deprecatedModelRedirected bool,
 	deprecatedOriginalModel string,
+	routeDecision *RouteDecision,
 ) {
 	parser := provider.GetParser(providerInfo.Provider)
 	metrics, err := parser.ParseResponse(resp.Body)
@@ -360,6 +438,12 @@ func (h *Handler) logRequest(
 	}
 
 	metrics.ResponseTime = resp.ResponseTime
+
+	// Attribute cost to the provider the request was actually forwarded to. The
+	// OpenAI parser hardcodes Provider="openai" on every parse, so without this the
+	// per-provider price lookup would mis-resolve every OpenAI-compatible upstream
+	// (Fireworks, Together, and any routed provider) to OpenAI's prices.
+	metrics.Provider = string(providerInfo.Provider)
 
 	cost := h.pricing.Calculate(metrics)
 
@@ -425,6 +509,17 @@ func (h *Handler) logRequest(
 		log.OriginalModel = &deprecatedOriginalModel
 	}
 
+	// Attach the provider-routing decision trace. Provider/Model above already
+	// reflect the routed endpoint (providerInfo was rewritten before forwarding);
+	// RoutingOriginalModel records the canonical slug the client requested, taken
+	// from the unmodified request body.
+	if routeDecision != nil {
+		log.RoutedProvider = &routeDecision.Provider
+		log.RoutingReason = &routeDecision.Reason
+		originalSlug := parser.ExtractModel(reqBody)
+		log.RoutingOriginalModel = &originalSlug
+	}
+
 	// Optionally archive request/response bodies to object storage. Runs inside this
 	// background goroutine, so it never adds latency to the proxied request.
 	h.archiveBodies(ctx, log, apiKeyInfo.ID, requestID, requestedAt, req, customHeaders, reqBody, resp)
@@ -480,6 +575,67 @@ func isValidAWSRegion(s string) bool {
 		}
 	}
 	return true
+}
+
+// shouldConsiderRouting reports whether provider routing may run for this
+// request. Routing is opt-in: it runs ONLY when the caller explicitly requests
+// it with x-majordomo-provider: majordomo. Every other value (a concrete provider
+// pin) and an absent header follow today's exact pass-through path. Even when
+// opted in, routing applies only to the OpenAI-compatible surface — v1 scope does
+// not translate routed traffic to other dialects.
+func shouldConsiderRouting(headers map[string]string, p provider.Provider) bool {
+	if !strings.EqualFold(headers["x-majordomo-provider"], string(provider.ProviderMajordomo)) {
+		return false
+	}
+	return p == provider.ProviderOpenAI
+}
+
+// resolveDataPolicy computes the data-handling requirement for a routed request
+// as the union of two floors: the deployment default (config) and the per-request
+// headers (X-Majordomo-ZDR, X-Majordomo-Data-Collection). Tighten-only: a header
+// can ADD a requirement but never relax the configured default. The headers are
+// reserved (never forwarded upstream).
+func (h *Handler) resolveDataPolicy(headers map[string]string) DataPolicy {
+	p := DataPolicy{
+		RequireZDR:              h.config.Routing.DefaultRequireZDR,
+		RequireNoDataCollection: strings.EqualFold(h.config.Routing.DefaultDataCollection, "deny"),
+	}
+	if v, ok := headers["x-majordomo-zdr"]; ok && isTruthyHeader(v) {
+		p.RequireZDR = true
+	}
+	if v, ok := headers["x-majordomo-data-collection"]; ok && strings.EqualFold(v, "deny") {
+		p.RequireNoDataCollection = true
+	}
+	return p
+}
+
+// isTruthyHeader reports whether a header value expresses an affirmative.
+func isTruthyHeader(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on", "require", "required":
+		return true
+	default:
+		return false
+	}
+}
+
+// resolveRoutedCredential resolves the plaintext provider key to inject for a
+// routed request from the gateway's stored key. Returns an error when no key is
+// stored for the provider (which should not happen, since Route hard-filters to
+// credentialed endpoints).
+func (h *Handler) resolveRoutedCredential(ctx context.Context, providerName string) (string, error) {
+	if h.providerKeys == nil || h.secretStore == nil {
+		return "", fmt.Errorf("no provider key resolver configured")
+	}
+	rec, err := h.providerKeys.GetKey(ctx, providerName)
+	if err != nil {
+		return "", fmt.Errorf("get provider key: %w", err)
+	}
+	plaintext, err := h.secretStore.Decrypt(rec.EncryptedKey)
+	if err != nil {
+		return "", fmt.Errorf("decrypt provider key: %w", err)
+	}
+	return plaintext, nil
 }
 
 // extractProviderKeyInfo extracts and hashes the provider API key from the Authorization header.

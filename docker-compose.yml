@@ -43,6 +43,13 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-majordomo_gateway}
       POSTGRES_SSLMODE: disable
       ADMIN_TOKEN: ${ADMIN_TOKEN:?ADMIN_TOKEN is required}
+      # Provider routing (optional; off by default). To enable, set ENCRYPTION_KEY
+      # (openssl rand -hex 32) and ROUTING_ENABLED=true in .env. An empty
+      # ENCRYPTION_KEY leaves provider-key management and routing disabled.
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      ROUTING_ENABLED: ${ROUTING_ENABLED:-false}
+      ROUTING_DEFAULT_REQUIRE_ZDR: ${ROUTING_DEFAULT_REQUIRE_ZDR:-false}
+      ROUTING_DEFAULT_DATA_COLLECTION: ${ROUTING_DEFAULT_DATA_COLLECTION:-}
     env_file:
       - .env
     healthcheck:

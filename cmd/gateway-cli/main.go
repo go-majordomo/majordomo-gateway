@@ -38,6 +38,8 @@ dispatch:
 	switch args[0] {
 	case "keys":
 		err = runKeys(c, args[1:])
+	case "provider-keys":
+		err = runProviderKeys(c, args[1:])
 	case "metadata":
 		err = runMetadata(c, args[1:])
 	case "usage":
@@ -74,6 +76,10 @@ Commands:
   keys create --name <name> [--description <text>]   Mint a new API key (shown once)
   keys list                                          List API keys
   keys revoke <id>                                   Revoke an API key
+
+  provider-keys add --provider <p> --key <k>         Store an encrypted upstream provider key
+  provider-keys list                                 List stored provider keys (no key material)
+  provider-keys remove <provider>                    Remove a stored provider key
 
   metadata list                                      Discovered metadata keys + cardinality
   metadata activate --api-key <id> <key>             Index a metadata key (makes it queryable)

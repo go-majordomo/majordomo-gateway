@@ -20,9 +20,35 @@ const (
 	ProviderFireworks       Provider = "fireworks"      // Fireworks AI; OpenAI-compatible
 	ProviderTogether        Provider = "together"       // Together AI; OpenAI-compatible
 	ProviderDeepSeek        Provider = "deepseek"       // DeepSeek; OpenAI-compatible
+	ProviderMoonshot        Provider = "moonshot"       // Moonshot AI (Kimi); OpenAI-compatible
+	ProviderBaseten         Provider = "baseten"        // Baseten Model APIs; OpenAI-compatible
+	ProviderNebius          Provider = "nebius"         // Nebius AI Studio; OpenAI-compatible
 	ProviderBedrockMantle   Provider = "bedrock-mantle" // AWS Bedrock Mantle; Anthropic Messages API
+	ProviderMajordomo       Provider = "majordomo"      // routing opt-in sentinel; never a real upstream
 	ProviderUnknown         Provider = "unknown"
 )
+
+// credentialProviders is the set of real upstream providers that authenticate
+// with a stored bearer credential (as opposed to AWS-signed Bedrock or the
+// routing sentinel). Provider-key management validates against this set so typos
+// are rejected before a useless credential is stored.
+var credentialProviders = map[Provider]bool{
+	ProviderOpenAI:    true,
+	ProviderAnthropic: true,
+	ProviderGemini:    true,
+	ProviderFireworks: true,
+	ProviderTogether:  true,
+	ProviderDeepSeek:  true,
+	ProviderMoonshot:  true,
+	ProviderBaseten:   true,
+	ProviderNebius:    true,
+}
+
+// IsCredentialProvider reports whether name is a known upstream that accepts a
+// stored bearer credential for provider routing. name is matched case-insensitively.
+func IsCredentialProvider(name string) bool {
+	return credentialProviders[Provider(strings.ToLower(name))]
+}
 
 type ResponseParser interface {
 	ParseResponse(body []byte) (*models.UsageMetrics, error)
@@ -36,6 +62,13 @@ type ProviderInfo struct {
 
 func Detect(path string, headers map[string]string) ProviderInfo {
 	if explicit, ok := headers["x-majordomo-provider"]; ok {
+		// "majordomo" is not a real upstream — it is the opt-in signal for
+		// provider routing. Resolve the request surface from the path (routing
+		// operates on the OpenAI-compatible surface); the handler's routing layer
+		// picks the concrete provider from the model slug.
+		if strings.EqualFold(explicit, string(ProviderMajordomo)) {
+			return detectFromPath(path)
+		}
 		return resolveExplicitProvider(explicit)
 	}
 
@@ -86,6 +119,15 @@ func resolveExplicitProvider(name string) ProviderInfo {
 	case ProviderDeepSeek:
 		// BaseURL omits /v1 because NormalizeOpenAIPath adds it to the forwarded path.
 		return ProviderInfo{Provider: ProviderDeepSeek, BaseURL: "https://api.deepseek.com"}
+	case ProviderMoonshot:
+		// OpenAI-compatible endpoint; BaseURL omits /v1 (NormalizeOpenAIPath adds it).
+		return ProviderInfo{Provider: ProviderMoonshot, BaseURL: "https://api.moonshot.ai"}
+	case ProviderBaseten:
+		// Baseten Model APIs (OpenAI-compatible); BaseURL omits /v1.
+		return ProviderInfo{Provider: ProviderBaseten, BaseURL: "https://inference.baseten.co"}
+	case ProviderNebius:
+		// Nebius AI Studio (OpenAI-compatible); BaseURL omits /v1.
+		return ProviderInfo{Provider: ProviderNebius, BaseURL: "https://api.studio.nebius.com"}
 	case ProviderBedrockMantle:
 		// Region-templated at request time; BaseURL is set by the handler after
 		// resolving the region from X-Majordomo-Bedrock-Region or Host.
@@ -123,7 +165,8 @@ func detectFromPath(path string) ProviderInfo {
 func GetParser(p Provider) ResponseParser {
 	switch p {
 	case ProviderOpenAI, ProviderAzure, ProviderGeminiOpenAI, ProviderAnthropicOpenAI,
-		ProviderFireworks, ProviderTogether, ProviderDeepSeek:
+		ProviderFireworks, ProviderTogether, ProviderDeepSeek,
+		ProviderMoonshot, ProviderBaseten, ProviderNebius:
 		return &OpenAIParser{}
 	case ProviderAnthropic, ProviderBedrockMantle:
 		return &AnthropicParser{}

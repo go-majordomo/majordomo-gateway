@@ -2,10 +2,67 @@ package pricing
 
 import (
 	"math"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/go-majordomo/majordomo-gateway/internal/models"
 )
+
+// TestShippedModelCatalog loads the real model_catalog.json through the loader
+// and guards the properties routing + attribution depend on: per-provider prices
+// are distinct for a shared id, every routable endpoint is priced with a
+// /v1-less base URL, and a non-routable model is priced but not routable.
+func TestShippedModelCatalog(t *testing.T) {
+	data, err := os.ReadFile("../../model_catalog.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pricing, byProvider, catalog, err := parseCatalog(data)
+	if err != nil {
+		t.Fatalf("shipped model_catalog.json failed to parse: %v", err)
+	}
+	s := &Service{pricing: pricing, byProvider: byProvider, catalog: catalog}
+
+	// Per-provider pricing: a shared HF id resolves to distinct prices per provider.
+	tg, ok := s.resolve("together", "deepseek-ai/DeepSeek-V4-Pro")
+	if !ok {
+		t.Fatal("together price for shared id missing")
+	}
+	bt, ok := s.resolve("baseten", "deepseek-ai/DeepSeek-V4-Pro")
+	if !ok {
+		t.Fatal("baseten price for shared id missing")
+	}
+	if tg.InputPricePerMillion == bt.InputPricePerMillion {
+		t.Errorf("expected distinct per-provider prices for a shared id; both = %v", tg.InputPricePerMillion)
+	}
+
+	// Routing catalog: glm-5.2 is routable across >=2 providers; every candidate is
+	// well-formed and priceable by (provider, model).
+	eps, ok := s.Candidates("glm-5.2")
+	if !ok || len(eps) < 2 {
+		t.Fatalf("expected glm-5.2 routable with >=2 endpoints, got ok=%v n=%d", ok, len(eps))
+	}
+	for _, e := range eps {
+		if e.Provider == "" || e.BaseURL == "" || e.ProviderModelID == "" {
+			t.Errorf("endpoint missing fields: %+v", e)
+		}
+		if strings.HasSuffix(e.BaseURL, "/v1") {
+			t.Errorf("%s base_url must omit /v1 (NormalizeOpenAIPath adds it): %q", e.Provider, e.BaseURL)
+		}
+		if _, ok := s.resolve(e.Provider, e.ProviderModelID); !ok {
+			t.Errorf("routed endpoint %s/%s has no price", e.Provider, e.ProviderModelID)
+		}
+	}
+
+	// A non-routable model is priced (attribution) but carries no route.
+	if _, ok := s.resolve("openai", "gpt-5"); !ok {
+		t.Error("gpt-5 price missing")
+	}
+	if _, ok := s.Candidates("gpt-5"); ok {
+		t.Error("gpt-5 should not be routable")
+	}
+}
 
 func TestCalculate_CacheCreationTTL(t *testing.T) {
 	s := &Service{
