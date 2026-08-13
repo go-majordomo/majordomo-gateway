@@ -17,6 +17,8 @@ type MetadataKeyStorage interface {
 	ListMetadataKeys(ctx context.Context) ([]*models.MetadataKey, error)
 	ActivateMetadataKey(ctx context.Context, apiKeyID uuid.UUID, keyName string) error
 	DeactivateMetadataKey(ctx context.Context, apiKeyID uuid.UUID, keyName string) error
+	BackfillIndexedMetadata(ctx context.Context, apiKeyID uuid.UUID, keyName string, batchSize int) (int64, error)
+	CleanupIndexedMetadata(ctx context.Context, apiKeyID uuid.UUID, keyName string, batchSize int) (int64, error)
 	UpdateMetadataKeyDisplayName(ctx context.Context, apiKeyID uuid.UUID, keyName string, displayName *string) error
 }
 

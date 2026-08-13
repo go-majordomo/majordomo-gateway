@@ -10,20 +10,19 @@ import (
 
 	"github.com/go-majordomo/majordomo-gateway/internal/httputil"
 	"github.com/go-majordomo/majordomo-gateway/internal/repositories"
-	"github.com/go-majordomo/majordomo-gateway/internal/storage"
+	"github.com/go-majordomo/majordomo-gateway/internal/services"
 )
 
-// UsageController exposes read-only usage/reporting queries over HTTP. It reads
-// directly from the usage repository — these are pure aggregations with no business
-// logic, so no service layer sits in between.
+// UsageController exposes usage/reporting queries over HTTP. It binds request bodies,
+// delegates to the usage service (which owns filter resolution, pagination policy, and
+// the archived-body fetch), and maps domain errors to HTTP status codes.
 type UsageController struct {
-	usage     repositories.UsageStorage
-	bodyStore storage.Store // nil when body archival is disabled
+	svc *services.UsageService
 }
 
-// NewUsageController constructs a UsageController. bodyStore may be nil.
-func NewUsageController(usage repositories.UsageStorage, bodyStore storage.Store) *UsageController {
-	return &UsageController{usage: usage, bodyStore: bodyStore}
+// NewUsageController constructs a UsageController.
+func NewUsageController(svc *services.UsageService) *UsageController {
+	return &UsageController{svc: svc}
 }
 
 // RegisterRoutes mounts the usage query endpoints onto the given router.
@@ -45,138 +44,126 @@ func (c *UsageController) RegisterRoutes(r chi.Router) {
 }
 
 func (c *UsageController) GetSummary(w http.ResponseWriter, r *http.Request) {
-	filter, _, err := decodeUsageRequest(r)
+	q, err := decodeUsageQuery(r)
 	if err != nil {
 		httputil.WriteJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	summary, err := c.usage.GetUsageSummary(r.Context(), filter)
+	summary, err := c.svc.Summary(r.Context(), q)
 	if err != nil {
-		slog.Error("failed to get usage summary", "error", err)
-		httputil.WriteJSONError(w, http.StatusInternalServerError, "internal error")
+		c.writeErr(w, err, "get usage summary")
 		return
 	}
 	httputil.WriteJSON(w, http.StatusOK, summary)
 }
 
 func (c *UsageController) GetDailyUsage(w http.ResponseWriter, r *http.Request) {
-	filter, _, err := decodeUsageRequest(r)
+	q, err := decodeUsageQuery(r)
 	if err != nil {
 		httputil.WriteJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	daily, err := c.usage.GetDailyUsage(r.Context(), filter)
+	daily, err := c.svc.DailyUsage(r.Context(), q)
 	if err != nil {
-		slog.Error("failed to get daily usage", "error", err)
-		httputil.WriteJSONError(w, http.StatusInternalServerError, "internal error")
+		c.writeErr(w, err, "get daily usage")
 		return
 	}
 	httputil.WriteJSON(w, http.StatusOK, daily)
 }
 
 func (c *UsageController) GetModelBreakdown(w http.ResponseWriter, r *http.Request) {
-	filter, _, err := decodeUsageRequest(r)
+	q, err := decodeUsageQuery(r)
 	if err != nil {
 		httputil.WriteJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	breakdown, err := c.usage.GetModelBreakdown(r.Context(), filter)
+	breakdown, err := c.svc.ModelBreakdown(r.Context(), q)
 	if err != nil {
-		slog.Error("failed to get model breakdown", "error", err)
-		httputil.WriteJSONError(w, http.StatusInternalServerError, "internal error")
+		c.writeErr(w, err, "get model breakdown")
 		return
 	}
 	httputil.WriteJSON(w, http.StatusOK, breakdown)
 }
 
 func (c *UsageController) GetProviderBreakdown(w http.ResponseWriter, r *http.Request) {
-	filter, _, err := decodeUsageRequest(r)
+	q, err := decodeUsageQuery(r)
 	if err != nil {
 		httputil.WriteJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	breakdown, err := c.usage.GetProviderBreakdown(r.Context(), filter)
+	breakdown, err := c.svc.ProviderBreakdown(r.Context(), q)
 	if err != nil {
-		slog.Error("failed to get provider breakdown", "error", err)
-		httputil.WriteJSONError(w, http.StatusInternalServerError, "internal error")
+		c.writeErr(w, err, "get provider breakdown")
 		return
 	}
 	httputil.WriteJSON(w, http.StatusOK, breakdown)
 }
 
 func (c *UsageController) GetAPIKeyBreakdown(w http.ResponseWriter, r *http.Request) {
-	filter, _, err := decodeUsageRequest(r)
+	q, err := decodeUsageQuery(r)
 	if err != nil {
 		httputil.WriteJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	breakdown, err := c.usage.GetAPIKeyBreakdown(r.Context(), filter)
+	breakdown, err := c.svc.APIKeyBreakdown(r.Context(), q)
 	if err != nil {
-		slog.Error("failed to get api key breakdown", "error", err)
-		httputil.WriteJSONError(w, http.StatusInternalServerError, "internal error")
+		c.writeErr(w, err, "get api key breakdown")
 		return
 	}
 	httputil.WriteJSON(w, http.StatusOK, breakdown)
 }
 
 func (c *UsageController) GetErrorSummary(w http.ResponseWriter, r *http.Request) {
-	filter, _, err := decodeUsageRequest(r)
+	q, err := decodeUsageQuery(r)
 	if err != nil {
 		httputil.WriteJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	summary, err := c.usage.GetErrorSummary(r.Context(), filter)
+	summary, err := c.svc.ErrorSummary(r.Context(), q)
 	if err != nil {
-		slog.Error("failed to get error summary", "error", err)
-		httputil.WriteJSONError(w, http.StatusInternalServerError, "internal error")
+		c.writeErr(w, err, "get error summary")
 		return
 	}
 	httputil.WriteJSON(w, http.StatusOK, summary)
 }
 
 func (c *UsageController) GetRecentErrors(w http.ResponseWriter, r *http.Request) {
-	filter, req, err := decodeUsageRequest(r)
+	q, err := decodeUsageQuery(r)
 	if err != nil {
 		httputil.WriteJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	limit := clampLimit(req.Limit, 20, 100)
-	errorsList, err := c.usage.GetRecentErrors(r.Context(), filter, limit)
+	errorsList, err := c.svc.RecentErrors(r.Context(), q)
 	if err != nil {
-		slog.Error("failed to get recent errors", "error", err)
-		httputil.WriteJSONError(w, http.StatusInternalServerError, "internal error")
+		c.writeErr(w, err, "get recent errors")
 		return
 	}
 	httputil.WriteJSON(w, http.StatusOK, errorsList)
 }
 
 func (c *UsageController) GetLatencyStats(w http.ResponseWriter, r *http.Request) {
-	filter, _, err := decodeUsageRequest(r)
+	q, err := decodeUsageQuery(r)
 	if err != nil {
 		httputil.WriteJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	stats, err := c.usage.GetLatencyStats(r.Context(), filter)
+	stats, err := c.svc.LatencyStats(r.Context(), q)
 	if err != nil {
-		slog.Error("failed to get latency stats", "error", err)
-		httputil.WriteJSONError(w, http.StatusInternalServerError, "internal error")
+		c.writeErr(w, err, "get latency stats")
 		return
 	}
 	httputil.WriteJSON(w, http.StatusOK, stats)
 }
 
 func (c *UsageController) ListRequests(w http.ResponseWriter, r *http.Request) {
-	filter, req, err := decodeUsageRequest(r)
+	q, err := decodeUsageQuery(r)
 	if err != nil {
 		httputil.WriteJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	limit := clampLimit(req.Limit, 50, 200)
-	offset := clampOffset(req.Offset)
-	requests, total, err := c.usage.ListUsageRequests(r.Context(), filter, limit, offset)
+	requests, total, err := c.svc.ListRequests(r.Context(), q)
 	if err != nil {
-		slog.Error("failed to list usage requests", "error", err)
-		httputil.WriteJSONError(w, http.StatusInternalServerError, "internal error")
+		c.writeErr(w, err, "list usage requests")
 		return
 	}
 	httputil.WriteJSON(w, http.StatusOK, map[string]interface{}{
@@ -186,17 +173,14 @@ func (c *UsageController) ListRequests(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *UsageController) ListRuns(w http.ResponseWriter, r *http.Request) {
-	filter, req, err := decodeUsageRequest(r)
+	q, err := decodeUsageQuery(r)
 	if err != nil {
 		httputil.WriteJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	limit := clampLimit(req.Limit, 50, 200)
-	offset := clampOffset(req.Offset)
-	runs, total, err := c.usage.ListRuns(r.Context(), filter, limit, offset)
+	runs, total, err := c.svc.ListRuns(r.Context(), q)
 	if err != nil {
-		slog.Error("failed to list runs", "error", err)
-		httputil.WriteJSONError(w, http.StatusInternalServerError, "internal error")
+		c.writeErr(w, err, "list runs")
 		return
 	}
 	httputil.WriteJSON(w, http.StatusOK, map[string]interface{}{
@@ -211,15 +195,14 @@ func (c *UsageController) GetMetadataBreakdown(w http.ResponseWriter, r *http.Re
 		httputil.WriteJSONError(w, http.StatusBadRequest, "missing metadata key name")
 		return
 	}
-	filter, _, err := decodeUsageRequest(r)
+	q, err := decodeUsageQuery(r)
 	if err != nil {
 		httputil.WriteJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	breakdown, err := c.usage.GetMetadataBreakdown(r.Context(), filter, keyName)
+	breakdown, err := c.svc.MetadataBreakdown(r.Context(), q, keyName)
 	if err != nil {
-		slog.Error("failed to get metadata breakdown", "error", err)
-		httputil.WriteJSONError(w, http.StatusInternalServerError, "internal error")
+		c.writeErr(w, err, "get metadata breakdown")
 		return
 	}
 	httputil.WriteJSON(w, http.StatusOK, breakdown)
@@ -231,9 +214,7 @@ func (c *UsageController) GetRunTree(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteJSONError(w, http.StatusBadRequest, "missing trace id")
 		return
 	}
-	// The run tree spans the whole history; use a wide default window.
-	filter := &repositories.UsageFilter{}
-	tree, err := c.usage.GetRunTree(r.Context(), filter, traceID)
+	tree, err := c.svc.RunTree(r.Context(), traceID)
 	if err != nil {
 		slog.Error("failed to get run tree", "error", err)
 		httputil.WriteJSONError(w, http.StatusInternalServerError, "internal error")
@@ -252,7 +233,7 @@ func (c *UsageController) GetRequestDetail(w http.ResponseWriter, r *http.Reques
 		httputil.WriteJSONError(w, http.StatusBadRequest, "invalid request ID")
 		return
 	}
-	detail, err := c.usage.GetRequestDetail(r.Context(), id)
+	detail, err := c.svc.RequestDetail(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, repositories.ErrRequestNotFound) {
 			httputil.WriteJSONError(w, http.StatusNotFound, "request not found")
@@ -268,51 +249,36 @@ func (c *UsageController) GetRequestDetail(w http.ResponseWriter, r *http.Reques
 // GetRequestBody streams the archived request/response bodies for one request from
 // object storage. 404 when body archival is disabled or nothing was archived.
 func (c *UsageController) GetRequestBody(w http.ResponseWriter, r *http.Request) {
-	if c.bodyStore == nil {
-		httputil.WriteJSONError(w, http.StatusNotFound, "body archival is not enabled")
-		return
-	}
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		httputil.WriteJSONError(w, http.StatusBadRequest, "invalid request ID")
 		return
 	}
-	detail, err := c.usage.GetRequestDetail(r.Context(), id)
+	content, err := c.svc.RequestBody(r.Context(), id)
 	if err != nil {
-		if errors.Is(err, repositories.ErrRequestNotFound) {
+		switch {
+		case errors.Is(err, services.ErrBodyArchivalDisabled):
+			httputil.WriteJSONError(w, http.StatusNotFound, "body archival is not enabled")
+		case errors.Is(err, repositories.ErrRequestNotFound):
 			httputil.WriteJSONError(w, http.StatusNotFound, "request not found")
-			return
+		case errors.Is(err, services.ErrNoBodyArchived):
+			httputil.WriteJSONError(w, http.StatusNotFound, "no body archived for this request")
+		default:
+			slog.Error("failed to fetch archived body", "error", err, "request_id", id)
+			httputil.WriteJSONError(w, http.StatusInternalServerError, "failed to fetch body")
 		}
-		slog.Error("failed to get request detail", "error", err)
-		httputil.WriteJSONError(w, http.StatusInternalServerError, "internal error")
-		return
-	}
-	if detail.BodyS3Key == nil {
-		httputil.WriteJSONError(w, http.StatusNotFound, "no body archived for this request")
-		return
-	}
-	content, err := c.bodyStore.Download(r.Context(), *detail.BodyS3Key)
-	if err != nil {
-		slog.Error("failed to download archived body", "error", err, "key", *detail.BodyS3Key)
-		httputil.WriteJSONError(w, http.StatusInternalServerError, "failed to fetch body")
 		return
 	}
 	httputil.WriteJSON(w, http.StatusOK, content)
 }
 
-func clampLimit(v, def, max int) int {
-	if v <= 0 {
-		return def
+// writeErr maps a usage-service error to an HTTP response: validation failures become
+// 400 with the client-safe message, everything else a logged 500.
+func (c *UsageController) writeErr(w http.ResponseWriter, err error, msg string) {
+	if errors.Is(err, services.ErrValidation) {
+		httputil.WriteJSONError(w, http.StatusBadRequest, err.Error())
+		return
 	}
-	if v > max {
-		return max
-	}
-	return v
-}
-
-func clampOffset(v int) int {
-	if v < 0 {
-		return 0
-	}
-	return v
+	slog.Error("failed to "+msg, "error", err)
+	httputil.WriteJSONError(w, http.StatusInternalServerError, "internal error")
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/go-majordomo/majordomo-gateway/internal/requestlog"
 	"github.com/go-majordomo/majordomo-gateway/internal/secrets"
 	"github.com/go-majordomo/majordomo-gateway/internal/server"
+	"github.com/go-majordomo/majordomo-gateway/internal/services"
 	"github.com/go-majordomo/majordomo-gateway/internal/storage"
 )
 
@@ -123,7 +124,8 @@ func Build(ctx context.Context, cfg *config.Config) (*Server, error) {
 			return nil, fmt.Errorf("init secret store: %w", err)
 		}
 		providerKeyRepo := repositories.NewProviderKeyRepository(db)
-		providerKeysController = controllers.NewProviderKeysController(providerKeyRepo, secretStore)
+		providerKeyService := services.NewProviderKeyService(providerKeyRepo, secretStore)
+		providerKeysController = controllers.NewProviderKeysController(providerKeyService)
 		slog.Info("provider-key management enabled")
 
 		if cfg.Routing.Enabled {
@@ -141,10 +143,15 @@ func Build(ctx context.Context, cfg *config.Config) (*Server, error) {
 	// ── Proxy Handler ─────────────────────────────────────────────────────────
 	proxyHandler := proxy.NewHandler(logWriter, pricingSvc, deprecatedSvc, resolver, cfg, bodyStore, handlerOpts...)
 
+	// ── Services (business logic between controllers and repositories) ────────
+	keyService := services.NewKeyService(apiKeyRepo)
+	usageService := services.NewUsageService(usageRepo, bodyStore)
+	metadataService := services.NewMetadataService(metadataKeyRepo)
+
 	// ── Controllers (admin/query API) ─────────────────────────────────────────
-	keysController := controllers.NewKeysController(apiKeyRepo)
-	usageController := controllers.NewUsageController(usageRepo, bodyStore)
-	metadataController := controllers.NewMetadataController(metadataKeyRepo)
+	keysController := controllers.NewKeysController(keyService)
+	usageController := controllers.NewUsageController(usageService)
+	metadataController := controllers.NewMetadataController(metadataService)
 	if cfg.Admin.Token == "" {
 		slog.Warn("ADMIN_TOKEN not set — key management and usage query API are disabled; proxy traffic only")
 	}
