@@ -119,6 +119,8 @@ type ProvidersConfig struct {
 	Moonshot  ProviderConfig `mapstructure:"moonshot"`
 	Baseten   ProviderConfig `mapstructure:"baseten"`
 	Nebius    ProviderConfig `mapstructure:"nebius"`
+	DeepInfra ProviderConfig `mapstructure:"deepinfra"`
+	Novita    ProviderConfig `mapstructure:"novita"`
 }
 
 type ProviderConfig struct {
@@ -177,6 +179,8 @@ func bindEnv(v *viper.Viper) {
 	v.BindEnv("providers.moonshot.base_url", "MOONSHOT_BASE_URL")
 	v.BindEnv("providers.baseten.base_url", "BASETEN_BASE_URL")
 	v.BindEnv("providers.nebius.base_url", "NEBIUS_BASE_URL")
+	v.BindEnv("providers.deepinfra.base_url", "DEEPINFRA_BASE_URL")
+	v.BindEnv("providers.novita.base_url", "NOVITA_BASE_URL")
 
 	v.BindEnv("metadata.hll_flush_interval", "METADATA_HLL_FLUSH_INTERVAL")
 	v.BindEnv("metadata.active_keys_cache_ttl", "METADATA_ACTIVE_KEYS_CACHE_TTL")
@@ -227,6 +231,10 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("providers.moonshot.base_url", "https://api.moonshot.ai")
 	v.SetDefault("providers.baseten.base_url", "https://inference.baseten.co")
 	v.SetDefault("providers.nebius.base_url", "https://api.studio.nebius.com")
+	// Includes the /v1/openai version segment; see provider.BaseURLHasVersionSegment.
+	v.SetDefault("providers.deepinfra.base_url", "https://api.deepinfra.com/v1/openai")
+	// Version lives in the path (/openai/v1/...), so the base URL stops at /openai.
+	v.SetDefault("providers.novita.base_url", "https://api.novita.ai/openai")
 
 	v.SetDefault("metadata.hll_flush_interval", 60*time.Second)
 	v.SetDefault("metadata.active_keys_cache_ttl", 5*time.Minute)

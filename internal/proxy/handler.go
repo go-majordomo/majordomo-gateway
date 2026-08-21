@@ -81,6 +81,8 @@ func NewHandler(
 		provider.ProviderMoonshot:  cfg.Providers.Moonshot.BaseURL,
 		provider.ProviderBaseten:   cfg.Providers.Baseten.BaseURL,
 		provider.ProviderNebius:    cfg.Providers.Nebius.BaseURL,
+		provider.ProviderDeepInfra: cfg.Providers.DeepInfra.BaseURL,
+		provider.ProviderNovita:    cfg.Providers.Novita.BaseURL,
 	}
 
 	h := &Handler{
@@ -256,6 +258,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			r.Header.Del("Authorization")
 			r.Header.Set("Anthropic-Version", "2023-06-01")
 		}
+	}
+
+	// Undo the /v1 prefix for providers whose base URL already carries a version
+	// segment. Applied here, after both routing and translation have settled the
+	// provider actually being forwarded to: routing can swap the provider out from
+	// under the detected one, so deciding this any earlier would use the wrong
+	// provider for a routed request.
+	if provider.BaseURLHasVersionSegment(providerInfo.Provider) {
+		r.URL.Path = provider.StripOpenAIVersionPrefix(r.URL.Path)
 	}
 
 	// Decide whether to use the streaming path.

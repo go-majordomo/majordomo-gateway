@@ -277,6 +277,8 @@ and `createOpenAI({ baseURL, apiKey, fetch })`. Pydantic AI's current model clas
 | Anthropic | `anthropic` (native `/v1/messages`) | `anthropic-openai` |
 | Gemini | `gemini` | `gemini-openai` |
 | Fireworks / Together / DeepSeek | — | `fireworks` / `together` / `deepseek` |
+| Moonshot (Kimi) / Baseten / Nebius | — | `moonshot` / `baseten` / `nebius` |
+| DeepInfra / Novita | — | `deepinfra` / `novita` |
 
 Set `X-Majordomo-Provider` explicitly whenever the request path can't disambiguate the
 provider (i.e. anything going through the OpenAI-compatible `/v1/chat/completions` path).
