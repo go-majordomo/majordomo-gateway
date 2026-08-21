@@ -1,5 +1,5 @@
 {
-  "_comment": "Single source of truth for model prices, routing endpoints, and provider data posture. providers.<p>: base_url, zdr, data_collection (provider-level), models{model_id: prices}. routes.<slug>: (provider, model) pairs that serve a canonical routable slug. Prices are synced to the authoritative llm_config. NOTE: moonshot/baseten/nebius are not in that config (added on request); their prices/model-ids are best-effort drafts. zdr/data_collection are conservative (false/allow) until curated.",
+  "_comment": "Single source of truth for model prices, routing endpoints, and provider data posture. providers.<p>: base_url, zdr, data_collection (provider-level), models{model_id: prices}. routes.<slug>: (provider, model) pairs that serve a canonical routable slug. Prices are synced to the authoritative llm_config. NOTE: moonshot/baseten/nebius/deepinfra/novita are not in that config (added on request); their prices and model-ids are best-effort drafts pending review. base_url must compose with the forwarded path: most OpenAI-compatible providers stop before /v1, but deepinfra's surface is nested under its version segment (/v1/openai) — see provider.BaseURLHasVersionSegment, and keep this value in step with the config default. zdr/data_collection are conservative (false/allow) until curated.",
   "providers": {
     "anthropic": {
       "base_url": "https://api.anthropic.com",
@@ -720,6 +720,11 @@
           "input_price_per_million": 1.35,
           "output_price_per_million": 4.3,
           "cached_price_per_million": 0
+        },
+        "thinkingmachines/Inkling": {
+          "input_price_per_million": 1.0,
+          "output_price_per_million": 4.05,
+          "cached_price_per_million": 0.17
         }
       }
     },
@@ -739,6 +744,85 @@
           "cached_price_per_million": 0
         },
         "zai-org/GLM-5.2": {
+          "input_price_per_million": 1.4,
+          "output_price_per_million": 4.4,
+          "cached_price_per_million": 0.26
+        },
+        "moonshotai/Kimi-K2.6": {
+          "input_price_per_million": 0.95,
+          "output_price_per_million": 4.0,
+          "cached_price_per_million": 0
+        },
+        "moonshotai/Kimi-K3": {
+          "input_price_per_million": 3.0,
+          "output_price_per_million": 15.0,
+          "cached_price_per_million": 0
+        }
+      }
+    },
+    "deepinfra": {
+      "base_url": "https://api.deepinfra.com/v1/openai",
+      "zdr": false,
+      "data_collection": "allow",
+      "models": {
+        "deepseek-ai/DeepSeek-V4-Pro": {
+          "input_price_per_million": 1.3,
+          "output_price_per_million": 2.6,
+          "cached_price_per_million": 0.1
+        },
+        "moonshotai/Kimi-K2.6": {
+          "input_price_per_million": 0.75,
+          "output_price_per_million": 3.5,
+          "cached_price_per_million": 0.15
+        },
+        "moonshotai/Kimi-K3": {
+          "input_price_per_million": 2.85,
+          "output_price_per_million": 14.25,
+          "cached_price_per_million": 0.285
+        },
+        "zai-org/GLM-5.1": {
+          "input_price_per_million": 1.05,
+          "output_price_per_million": 3.5,
+          "cached_price_per_million": 0.205
+        },
+        "zai-org/GLM-5.2": {
+          "input_price_per_million": 0.75,
+          "output_price_per_million": 2.4,
+          "cached_price_per_million": 0.14
+        },
+        "thinkingmachines/Inkling": {
+          "input_price_per_million": 0.95,
+          "output_price_per_million": 4.05,
+          "cached_price_per_million": 0.16
+        }
+      }
+    },
+    "novita": {
+      "base_url": "https://api.novita.ai/openai",
+      "zdr": false,
+      "data_collection": "allow",
+      "models": {
+        "deepseek/deepseek-v4-pro": {
+          "input_price_per_million": 1.6,
+          "output_price_per_million": 3.2,
+          "cached_price_per_million": 0.135
+        },
+        "moonshotai/kimi-k2.6": {
+          "input_price_per_million": 0.8,
+          "output_price_per_million": 3.4,
+          "cached_price_per_million": 0.16
+        },
+        "moonshotai/kimi-k3": {
+          "input_price_per_million": 3.0,
+          "output_price_per_million": 15.0,
+          "cached_price_per_million": 0.3
+        },
+        "zai-org/glm-5.1": {
+          "input_price_per_million": 1.38,
+          "output_price_per_million": 4.4,
+          "cached_price_per_million": 0.26
+        },
+        "zai-org/glm-5.2": {
           "input_price_per_million": 1.4,
           "output_price_per_million": 4.4,
           "cached_price_per_million": 0.26
@@ -767,6 +851,14 @@
       {
         "provider": "nebius",
         "model": "deepseek-ai/DeepSeek-V4-Pro"
+      },
+      {
+        "provider": "deepinfra",
+        "model": "deepseek-ai/DeepSeek-V4-Pro"
+      },
+      {
+        "provider": "novita",
+        "model": "deepseek/deepseek-v4-pro"
       }
     ],
     "kimi-k2.6": [
@@ -785,6 +877,18 @@
       {
         "provider": "baseten",
         "model": "moonshotai/Kimi-K2.6"
+      },
+      {
+        "provider": "deepinfra",
+        "model": "moonshotai/Kimi-K2.6"
+      },
+      {
+        "provider": "nebius",
+        "model": "moonshotai/Kimi-K2.6"
+      },
+      {
+        "provider": "novita",
+        "model": "moonshotai/kimi-k2.6"
       }
     ],
     "kimi-k3": [
@@ -803,6 +907,18 @@
       {
         "provider": "baseten",
         "model": "moonshotai/Kimi-K3"
+      },
+      {
+        "provider": "deepinfra",
+        "model": "moonshotai/Kimi-K3"
+      },
+      {
+        "provider": "nebius",
+        "model": "moonshotai/Kimi-K3"
+      },
+      {
+        "provider": "novita",
+        "model": "moonshotai/kimi-k3"
       }
     ],
     "glm-5.1": [
@@ -821,6 +937,14 @@
       {
         "provider": "nebius",
         "model": "zai-org/GLM-5.1"
+      },
+      {
+        "provider": "deepinfra",
+        "model": "zai-org/GLM-5.1"
+      },
+      {
+        "provider": "novita",
+        "model": "zai-org/glm-5.1"
       }
     ],
     "glm-5.2": [
@@ -839,6 +963,14 @@
       {
         "provider": "nebius",
         "model": "zai-org/GLM-5.2"
+      },
+      {
+        "provider": "deepinfra",
+        "model": "zai-org/GLM-5.2"
+      },
+      {
+        "provider": "novita",
+        "model": "zai-org/glm-5.2"
       }
     ],
     "inkling": [
@@ -848,6 +980,14 @@
       },
       {
         "provider": "together",
+        "model": "thinkingmachines/Inkling"
+      },
+      {
+        "provider": "deepinfra",
+        "model": "thinkingmachines/Inkling"
+      },
+      {
+        "provider": "baseten",
         "model": "thinkingmachines/Inkling"
       }
     ]

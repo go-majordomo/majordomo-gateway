@@ -74,3 +74,86 @@ func TestLoggedProviderReflectsRouting(t *testing.T) {
 		t.Fatal("timed out waiting for request log")
 	}
 }
+
+// TestUpstreamPathForVersionedBaseURL asserts the path that actually reaches the
+// upstream for providers whose base URL carries its own version segment. The
+// handler normalizes every OpenAI-compatible path to /v1/... on the way in, so
+// these providers need the /v1 stripped back off or the version doubles.
+//
+// gemini-openai has the same shape and shipped broken this way — it sent
+// /v1beta/openai/v1/chat/completions, which Google 404s. It has no config entry
+// to point at a test server, so its composed URL is asserted by
+// provider.TestUpstreamURLComposition instead.
+func TestUpstreamPathForVersionedBaseURL(t *testing.T) {
+	tests := []struct {
+		provider string
+		// clientPath is what the caller sends; wantPath is what the upstream
+		// must receive once baseURL and path are composed.
+		clientPath string
+		wantPath   string
+	}{
+		{"deepinfra", "/v1/chat/completions", "/v1/openai/chat/completions"},
+		{"deepinfra", "/chat/completions", "/v1/openai/chat/completions"},
+		{"novita", "/v1/chat/completions", "/openai/v1/chat/completions"},
+		// Unversioned base URL: the normalized /v1 must survive untouched.
+		{"nebius", "/chat/completions", "/v1/chat/completions"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.provider+tt.clientPath, func(t *testing.T) {
+			gotPath := make(chan string, 1)
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotPath <- r.URL.Path
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"model":   "m",
+					"usage":   map[string]any{"prompt_tokens": 1, "completion_tokens": 1},
+					"choices": []any{map[string]any{"message": map[string]any{"content": "hi"}}},
+				})
+			}))
+			defer upstream.Close()
+
+			// The provider's real base URL path prefix, appended to the test
+			// server origin so the composed path is what the handler produced.
+			prefix := map[string]string{
+				"deepinfra": "/v1/openai",
+				"novita":    "/openai",
+				"nebius":    "",
+			}[tt.provider]
+
+			apiKey := &models.APIKey{ID: uuid.New(), KeyHash: auth.HashAPIKey("test-api-key"), IsActive: true}
+			resolver := auth.NewResolver(&mockDeprecatedKeyStorage{key: apiKey})
+			pricingSvc := pricing.NewService("", "", "", 24*time.Hour)
+			providerCfg := config.ProviderConfig{BaseURL: upstream.URL + prefix}
+			cfg := &config.Config{
+				Server: config.ServerConfig{UpstreamTimeout: 10 * time.Second, StreamHeaderTimeout: 5 * time.Second},
+			}
+			switch tt.provider {
+			case "deepinfra":
+				cfg.Providers.DeepInfra = providerCfg
+			case "novita":
+				cfg.Providers.Novita = providerCfg
+			case "nebius":
+				cfg.Providers.Nebius = providerCfg
+			}
+			logs := &capturingLogWriter{ch: make(chan *models.RequestLog, 1)}
+			h := NewHandler(logs, pricingSvc, newDeprecatedService(t, deprecatedModelJSON), resolver, cfg, nil)
+
+			req := httptest.NewRequest(http.MethodPost, tt.clientPath, bytes.NewReader(openAIRequest("m")))
+			req.Header.Set("X-Majordomo-Key", "test-api-key")
+			req.Header.Set("X-Majordomo-Provider", tt.provider)
+			req.Header.Set("Content-Type", "application/json")
+
+			h.ServeHTTP(httptest.NewRecorder(), req)
+
+			select {
+			case got := <-gotPath:
+				if got != tt.wantPath {
+					t.Errorf("upstream received path %q, want %q", got, tt.wantPath)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("timed out waiting for upstream request")
+			}
+		})
+	}
+}

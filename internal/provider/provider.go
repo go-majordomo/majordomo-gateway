@@ -23,6 +23,8 @@ const (
 	ProviderMoonshot        Provider = "moonshot"       // Moonshot AI (Kimi); OpenAI-compatible
 	ProviderBaseten         Provider = "baseten"        // Baseten Model APIs; OpenAI-compatible
 	ProviderNebius          Provider = "nebius"         // Nebius AI Studio; OpenAI-compatible
+	ProviderDeepInfra       Provider = "deepinfra"      // DeepInfra; OpenAI-compatible, versioned base URL
+	ProviderNovita          Provider = "novita"         // Novita AI; OpenAI-compatible
 	ProviderBedrockMantle   Provider = "bedrock-mantle" // AWS Bedrock Mantle; Anthropic Messages API
 	ProviderMajordomo       Provider = "majordomo"      // routing opt-in sentinel; never a real upstream
 	ProviderUnknown         Provider = "unknown"
@@ -42,6 +44,8 @@ var credentialProviders = map[Provider]bool{
 	ProviderMoonshot:  true,
 	ProviderBaseten:   true,
 	ProviderNebius:    true,
+	ProviderDeepInfra: true,
+	ProviderNovita:    true,
 }
 
 // IsCredentialProvider reports whether name is a known upstream that accepts a
@@ -84,9 +88,50 @@ func Detect(path string, headers map[string]string) ProviderInfo {
 // canonical /v1/... shape. Returns the path unchanged for non-OpenAI-shaped
 // routes (Anthropic, Gemini, Bedrock).
 func NormalizeOpenAIPath(path string) string {
-	for _, suffix := range []string{"/chat/completions", "/completions", "/embeddings", "/responses"} {
+	for _, suffix := range openAIPathSuffixes {
 		if path == suffix || strings.HasPrefix(path, suffix+"/") {
 			return "/v1" + path
+		}
+	}
+	return path
+}
+
+// openAIPathSuffixes are the version-less OpenAI-compatible route suffixes that
+// NormalizeOpenAIPath prefixes with /v1 and StripOpenAIVersionPrefix removes it
+// from again. Shared so the two stay exact inverses of each other.
+var openAIPathSuffixes = []string{"/chat/completions", "/completions", "/embeddings", "/responses"}
+
+// BaseURLHasVersionSegment reports whether a provider's base URL already carries
+// an API version segment, so the upstream URL must NOT also receive the /v1
+// prefix that NormalizeOpenAIPath adds.
+//
+// Forward builds the upstream URL by concatenating baseURL + path, and most
+// OpenAI-compatible providers expose their surface at <host>/v1/..., so their
+// base URL stops before the version and the concatenation lines up. These two
+// invert that: their OpenAI surface is nested *under* a version segment
+// (/v1/openai for DeepInfra, /v1beta/openai for Gemini), so concatenating the
+// normalized path would produce a doubled version — /v1/openai/v1/chat/completions.
+//
+// Keyed on Provider rather than carried on ProviderInfo because the router
+// replaces the provider after detection, and the decision must follow the
+// provider actually forwarded to.
+func BaseURLHasVersionSegment(p Provider) bool {
+	switch p {
+	case ProviderDeepInfra, ProviderGeminiOpenAI:
+		return true
+	default:
+		return false
+	}
+}
+
+// StripOpenAIVersionPrefix is the inverse of NormalizeOpenAIPath: it removes a
+// leading /v1 from an OpenAI-compatible route so the path can be appended to a
+// base URL that already carries its own version segment. Paths that are not
+// OpenAI-shaped are returned unchanged.
+func StripOpenAIVersionPrefix(path string) string {
+	for _, suffix := range openAIPathSuffixes {
+		if path == "/v1"+suffix || strings.HasPrefix(path, "/v1"+suffix+"/") {
+			return strings.TrimPrefix(path, "/v1")
 		}
 	}
 	return path
@@ -128,6 +173,18 @@ func resolveExplicitProvider(name string) ProviderInfo {
 	case ProviderNebius:
 		// Nebius AI Studio (OpenAI-compatible); BaseURL omits /v1.
 		return ProviderInfo{Provider: ProviderNebius, BaseURL: "https://api.studio.nebius.com"}
+	case ProviderDeepInfra:
+		// DeepInfra's OpenAI-compatible surface lives at /v1/openai, so unlike the
+		// other OpenAI-compatible providers the BaseURL carries the version segment
+		// itself. See BaseURLHasVersionSegment for how the path is adjusted.
+		// https://docs.deepinfra.com/chat/overview
+		return ProviderInfo{Provider: ProviderDeepInfra, BaseURL: "https://api.deepinfra.com/v1/openai"}
+	case ProviderNovita:
+		// Novita's OpenAI surface is /openai, with the version in the path — the
+		// documented endpoint is https://api.novita.ai/openai/v1/chat/completions,
+		// so BaseURL omits /v1 and NormalizeOpenAIPath supplies it.
+		// https://novita.ai/docs/guides/llm-api
+		return ProviderInfo{Provider: ProviderNovita, BaseURL: "https://api.novita.ai/openai"}
 	case ProviderBedrockMantle:
 		// Region-templated at request time; BaseURL is set by the handler after
 		// resolving the region from X-Majordomo-Bedrock-Region or Host.
@@ -166,7 +223,8 @@ func GetParser(p Provider) ResponseParser {
 	switch p {
 	case ProviderOpenAI, ProviderAzure, ProviderGeminiOpenAI, ProviderAnthropicOpenAI,
 		ProviderFireworks, ProviderTogether, ProviderDeepSeek,
-		ProviderMoonshot, ProviderBaseten, ProviderNebius:
+		ProviderMoonshot, ProviderBaseten, ProviderNebius, ProviderDeepInfra,
+		ProviderNovita:
 		return &OpenAIParser{}
 	case ProviderAnthropic, ProviderBedrockMantle:
 		return &AnthropicParser{}

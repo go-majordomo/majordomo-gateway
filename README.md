@@ -7,7 +7,8 @@ your agents actually cost — sliced by model, provider, API key, or metadata, a
 rolled up into per-run cost waterfalls.
 
 - **Provider-agnostic proxy** — OpenAI, Anthropic, Gemini, Bedrock, and
-  OpenAI-compatible providers (Fireworks, Together, DeepSeek, Moonshot, Baseten, Nebius).
+  OpenAI-compatible providers (Fireworks, Together, DeepSeek, Moonshot, Baseten,
+  Nebius, DeepInfra, Novita).
 - **Your keys, relayed** — by default the gateway forwards the caller's own provider
   key upstream and stores no provider credentials.
 - **Provider routing (optional)** — opt in and the gateway routes a virtual model slug
@@ -187,9 +188,9 @@ last week?"* or *"show me the most expensive agent run yesterday."* The server e
 
 Provider base URLs (`OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`, `FIREWORKS_BASE_URL`,
 `MOONSHOT_BASE_URL`, …) can be overridden to route through a local proxy or mock.
-OpenAI-compatible providers (Fireworks, Together, DeepSeek, Moonshot, Baseten, Nebius)
-share OpenAI's request paths — select them with the `X-Majordomo-Provider` header
-(e.g. `X-Majordomo-Provider: deepseek`).
+OpenAI-compatible providers (Fireworks, Together, DeepSeek, Moonshot, Baseten,
+Nebius, DeepInfra, Novita) share OpenAI's request paths — select them with the
+`X-Majordomo-Provider` header (e.g. `X-Majordomo-Provider: deepseek`).
 
 ## Archiving request/response bodies
 

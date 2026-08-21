@@ -45,6 +45,29 @@ func TestProviderKeyService_UpsertKey_UnknownProvider(t *testing.T) {
 	}
 }
 
+// TestProviderKeyService_UpsertKey_AcceptsRoutableProviders pins the credential
+// allowlist end-to-end. Without it, a provider added to the catalog but omitted
+// from provider.credentialProviders is rejected here, so no key can ever be
+// stored for it and the router silently never selects it.
+func TestProviderKeyService_UpsertKey_AcceptsRoutableProviders(t *testing.T) {
+	for _, name := range []string{
+		"openai", "anthropic", "gemini", "fireworks", "together",
+		"deepseek", "moonshot", "baseten", "nebius", "deepinfra", "novita",
+	} {
+		t.Run(name, func(t *testing.T) {
+			store := &fakeProviderKeyStore{}
+			svc := NewProviderKeyService(store, stubSecretStore{})
+
+			if err := svc.UpsertKey(context.Background(), name, "sk-123"); err != nil {
+				t.Fatalf("UpsertKey(%q): %v", name, err)
+			}
+			if store.gotProvider != name {
+				t.Fatalf("expected provider %q, got %q", name, store.gotProvider)
+			}
+		})
+	}
+}
+
 func TestProviderKeyService_UpsertKey_EncryptsBeforeStoring(t *testing.T) {
 	store := &fakeProviderKeyStore{}
 	svc := NewProviderKeyService(store, stubSecretStore{})
