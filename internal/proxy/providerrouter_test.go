@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -85,9 +86,9 @@ func TestRoute_NotInCatalog(t *testing.T) {
 }
 
 func TestRoute_NoCredentialedEndpoint(t *testing.T) {
-	cat := fakeCatalog{"deepseek-v4-pro": {ep("fireworks", "fw/ds"), ep("together", "tg/ds")}}
+	cat := fakeCatalog{"deepseek-v4-pro-0813": {ep("fireworks", "fw/ds"), ep("together", "tg/ds")}}
 	rt := newRouter(cat, fakeHealth{}, fakeKeys{}, fakePricer{}, 0) // no keys at all
-	dec, err := rt.Route(context.Background(), "deepseek-v4-pro", DataPolicy{})
+	dec, err := rt.Route(context.Background(), "deepseek-v4-pro-0813", DataPolicy{})
 	if dec != nil {
 		t.Fatalf("expected nil decision, got %+v", dec)
 	}
@@ -97,12 +98,12 @@ func TestRoute_NoCredentialedEndpoint(t *testing.T) {
 }
 
 func TestRoute_CostWeightingPrefersCheaper(t *testing.T) {
-	cat := fakeCatalog{"deepseek-v4-pro": {ep("together", "tg/ds"), ep("fireworks", "fw/ds")}}
+	cat := fakeCatalog{"deepseek-v4-pro-0813": {ep("together", "tg/ds"), ep("fireworks", "fw/ds")}}
 	pricer := fakePricer{}.set("fireworks", "fw/ds", 1, 1).set("together", "tg/ds", 2, 2)
 	// Both credentialed and healthy (no health rows → all pass). r=0 selects the
 	// first bucket, which is the cheapest after the deterministic cost sort.
 	rt := newRouter(cat, fakeHealth{}, fakeKeys{"fireworks": true, "together": true}, pricer, 0)
-	dec, err := rt.Route(context.Background(), "deepseek-v4-pro", DataPolicy{})
+	dec, err := rt.Route(context.Background(), "deepseek-v4-pro-0813", DataPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +116,7 @@ func TestRoute_CostWeightingPrefersCheaper(t *testing.T) {
 }
 
 func TestRoute_HealthGateExcludesHighError(t *testing.T) {
-	cat := fakeCatalog{"deepseek-v4-pro": {ep("fireworks", "fw/ds"), ep("together", "tg/ds")}}
+	cat := fakeCatalog{"deepseek-v4-pro-0813": {ep("fireworks", "fw/ds"), ep("together", "tg/ds")}}
 	pricer := fakePricer{}.set("fireworks", "fw/ds", 1, 1).set("together", "tg/ds", 2, 2)
 	// Cheaper fireworks is unhealthy (enough samples, high error rate) → dropped,
 	// so the pricier-but-healthy together must win despite r=0.
@@ -124,7 +125,7 @@ func TestRoute_HealthGateExcludesHighError(t *testing.T) {
 		{Provider: "together", Model: "tg/ds", SampleCount: 100, ErrorRate: 0.0},
 	}
 	rt := newRouter(cat, health, fakeKeys{"fireworks": true, "together": true}, pricer, 0)
-	dec, err := rt.Route(context.Background(), "deepseek-v4-pro", DataPolicy{})
+	dec, err := rt.Route(context.Background(), "deepseek-v4-pro-0813", DataPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,14 +135,14 @@ func TestRoute_HealthGateExcludesHighError(t *testing.T) {
 }
 
 func TestRoute_AllUnhealthyFallsBackToCheapest(t *testing.T) {
-	cat := fakeCatalog{"deepseek-v4-pro": {ep("fireworks", "fw/ds"), ep("together", "tg/ds")}}
+	cat := fakeCatalog{"deepseek-v4-pro-0813": {ep("fireworks", "fw/ds"), ep("together", "tg/ds")}}
 	pricer := fakePricer{}.set("fireworks", "fw/ds", 1, 1).set("together", "tg/ds", 2, 2)
 	health := fakeHealth{
 		{Provider: "fireworks", Model: "fw/ds", SampleCount: 100, ErrorRate: 0.9},
 		{Provider: "together", Model: "tg/ds", SampleCount: 100, ErrorRate: 0.9},
 	}
 	rt := newRouter(cat, health, fakeKeys{"fireworks": true, "together": true}, pricer, 0)
-	dec, err := rt.Route(context.Background(), "deepseek-v4-pro", DataPolicy{})
+	dec, err := rt.Route(context.Background(), "deepseek-v4-pro-0813", DataPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,12 +155,12 @@ func TestRoute_AllUnhealthyFallsBackToCheapest(t *testing.T) {
 }
 
 func TestRoute_LowSampleEndpointNotCondemned(t *testing.T) {
-	cat := fakeCatalog{"deepseek-v4-pro": {ep("fireworks", "fw/ds")}}
+	cat := fakeCatalog{"deepseek-v4-pro-0813": {ep("fireworks", "fw/ds")}}
 	pricer := fakePricer{}.set("fireworks", "fw/ds", 1, 1)
 	// High error rate but below the sample threshold → must still be considered healthy.
 	health := fakeHealth{{Provider: "fireworks", Model: "fw/ds", SampleCount: 3, ErrorRate: 1.0}}
 	rt := newRouter(cat, health, fakeKeys{"fireworks": true}, pricer, 0)
-	dec, err := rt.Route(context.Background(), "deepseek-v4-pro", DataPolicy{})
+	dec, err := rt.Route(context.Background(), "deepseek-v4-pro-0813", DataPolicy{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,5 +257,128 @@ func TestRoute_DataPolicyNoCompliantEndpoint(t *testing.T) {
 	_, err := rt.Route(context.Background(), "m", DataPolicy{RequireZDR: true})
 	if !errors.Is(err, ErrNoCompliantEndpoint) {
 		t.Fatalf("expected ErrNoCompliantEndpoint, got %v", err)
+	}
+}
+
+func TestRoute_CarriesEndpointRequestDefaults(t *testing.T) {
+	withDefaults := ep("together", "tg/m")
+	withDefaults.RequestDefaults = map[string]json.RawMessage{"reasoning_effort": json.RawMessage(`"low"`)}
+	cat := fakeCatalog{"m": {withDefaults}}
+	rt := newRouter(cat, fakeHealth{}, fakeKeys{"together": true}, fakePricer{}, 0)
+
+	dec, err := rt.Route(context.Background(), "m", DataPolicy{})
+	if err != nil || dec == nil {
+		t.Fatalf("Route: dec=%v err=%v", dec, err)
+	}
+	if got := string(dec.RequestDefaults["reasoning_effort"]); got != `"low"` {
+		t.Errorf("RequestDefaults[reasoning_effort] = %s, want \"low\"", got)
+	}
+}
+
+func TestRewriteRoutedRequest(t *testing.T) {
+	low := map[string]json.RawMessage{"reasoning_effort": json.RawMessage(`"low"`)}
+
+	tests := []struct {
+		name        string
+		body        string
+		defaults    map[string]json.RawMessage
+		wantApplied []string
+		want        map[string]string // field -> raw JSON; "" means the field must be absent
+	}{
+		{
+			name:        "default added when the caller sets no reasoning field",
+			body:        `{"model":"glm-5.3","messages":[]}`,
+			defaults:    low,
+			wantApplied: []string{"reasoning_effort"},
+			want:        map[string]string{"model": `"tg/m"`, "reasoning_effort": `"low"`, "messages": `[]`},
+		},
+		{
+			name:     "caller's value for the same field wins",
+			body:     `{"model":"glm-5.3","reasoning_effort":"high"}`,
+			defaults: low,
+			want:     map[string]string{"reasoning_effort": `"high"`},
+		},
+		{
+			name:     "explicit null counts as set",
+			body:     `{"model":"glm-5.3","reasoning_effort":null}`,
+			defaults: low,
+			want:     map[string]string{"reasoning_effort": `null`},
+		},
+		{
+			name:     "a different reasoning field from the caller withholds the default",
+			body:     `{"model":"glm-5.3","thinking":{"type":"enabled"}}`,
+			defaults: low,
+			want:     map[string]string{"reasoning_effort": "", "thinking": `{"type":"enabled"}`},
+		},
+		{
+			name: "caller reasoning withholds every reasoning default but not other defaults",
+			body: `{"model":"glm-5.3","reasoning":{"enabled":true}}`,
+			defaults: map[string]json.RawMessage{
+				"reasoning_effort": json.RawMessage(`"low"`),
+				"thinking":         json.RawMessage(`{"type":"disabled"}`),
+				"top_p":            json.RawMessage(`0.95`),
+			},
+			wantApplied: []string{"top_p"},
+			want:        map[string]string{"reasoning_effort": "", "thinking": "", "top_p": `0.95`},
+		},
+		{
+			name: "object-valued defaults are applied and reported sorted",
+			body: `{"model":"glm-5.3"}`,
+			defaults: map[string]json.RawMessage{
+				"thinking": json.RawMessage(`{"type":"disabled"}`),
+				"top_p":    json.RawMessage(`0.95`),
+			},
+			wantApplied: []string{"thinking", "top_p"},
+			want:        map[string]string{"thinking": `{"type":"disabled"}`, "top_p": `0.95`},
+		},
+		{
+			name: "no defaults only rewrites the model",
+			body: `{"model":"glm-5.2","temperature":0.2}`,
+			want: map[string]string{"model": `"tg/m"`, "temperature": `0.2`, "reasoning_effort": ""},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, applied, err := RewriteRoutedRequest([]byte(tt.body), "tg/m", tt.defaults)
+			if err != nil {
+				t.Fatalf("RewriteRoutedRequest: %v", err)
+			}
+			if strings.Join(applied, ",") != strings.Join(tt.wantApplied, ",") {
+				t.Errorf("applied = %v, want %v", applied, tt.wantApplied)
+			}
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(got, &fields); err != nil {
+				t.Fatalf("rewritten body is not a JSON object: %v", err)
+			}
+			if string(fields["model"]) != `"tg/m"` {
+				t.Errorf("model = %s, want the provider-native id", fields["model"])
+			}
+			for field, want := range tt.want {
+				raw, present := fields[field]
+				if want == "" {
+					if present {
+						t.Errorf("field %q must be absent, got %s", field, raw)
+					}
+					continue
+				}
+				if string(raw) != want {
+					t.Errorf("field %q = %s, want %s", field, raw, want)
+				}
+			}
+		})
+	}
+
+	// The catalog's defaults map is shared across requests and must not be mutated.
+	if len(low) != 1 {
+		t.Errorf("defaults map was mutated: %v", low)
+	}
+}
+
+func TestRewriteRoutedRequest_RejectsNonObjectBody(t *testing.T) {
+	for _, body := range []string{`not json`, `["model"]`, `null`, ``} {
+		if _, _, err := RewriteRoutedRequest([]byte(body), "tg/m", nil); err == nil {
+			t.Errorf("body %q: expected an error", body)
+		}
 	}
 }

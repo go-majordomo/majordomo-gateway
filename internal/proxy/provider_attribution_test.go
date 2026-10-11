@@ -27,15 +27,15 @@ func (c *capturingLogWriter) WriteRequestLog(_ context.Context, log *models.Requ
 
 // TestLoggedProviderReflectsRouting guards the fix that a request is attributed
 // to the provider it was ROUTED to (X-Majordomo-Provider), not the response
-// format. Fireworks/Together/DeepSeek all parse with the OpenAI parser, which
-// hardcodes "openai" — so before the fix a DeepSeek request logged as "openai".
+// format. Fireworks/Together/Baseten all parse with the OpenAI parser, which
+// hardcodes "openai" — so before the fix a Together request logged as "openai".
 func TestLoggedProviderReflectsRouting(t *testing.T) {
 	// Fake upstream returns an OpenAI-format response, as OpenAI-compatible
-	// providers (DeepSeek, Fireworks, Together) do.
+	// providers (Fireworks, Together, Baseten) do.
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"model":   "deepseek-chat",
+			"model":   "zai-org/GLM-5.3",
 			"usage":   map[string]any{"prompt_tokens": 5, "completion_tokens": 7},
 			"choices": []any{map[string]any{"message": map[string]any{"content": "hi"}}},
 		})
@@ -49,42 +49,44 @@ func TestLoggedProviderReflectsRouting(t *testing.T) {
 		Server: config.ServerConfig{UpstreamTimeout: 10 * time.Second, StreamHeaderTimeout: 5 * time.Second},
 		Providers: config.ProvidersConfig{
 			OpenAI:   config.ProviderConfig{BaseURL: upstream.URL},
-			DeepSeek: config.ProviderConfig{BaseURL: upstream.URL},
+			Together: config.ProviderConfig{BaseURL: upstream.URL},
 		},
 	}
 	logs := &capturingLogWriter{ch: make(chan *models.RequestLog, 1)}
 	h := NewHandler(logs, pricingSvc, newDeprecatedService(t, deprecatedModelJSON), resolver, cfg, nil)
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(openAIRequest("deepseek-chat")))
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(openAIRequest("zai-org/GLM-5.3")))
 	req.Header.Set("X-Majordomo-Key", "test-api-key")
-	req.Header.Set("X-Majordomo-Provider", "deepseek")
+	req.Header.Set("X-Majordomo-Provider", "together")
 	req.Header.Set("Content-Type", "application/json")
 
 	h.ServeHTTP(httptest.NewRecorder(), req)
 
 	select {
 	case got := <-logs.ch:
-		if got.Provider != "deepseek" {
-			t.Errorf("logged Provider = %q, want %q (routing provider, not response format)", got.Provider, "deepseek")
+		if got.Provider != "together" {
+			t.Errorf("logged Provider = %q, want %q (routing provider, not response format)", got.Provider, "together")
 		}
-		if got.Model != "deepseek-chat" {
-			t.Errorf("logged Model = %q, want %q", got.Model, "deepseek-chat")
+		if got.Model != "zai-org/GLM-5.3" {
+			t.Errorf("logged Model = %q, want %q", got.Model, "zai-org/GLM-5.3")
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for request log")
 	}
 }
 
-// TestUpstreamPathForVersionedBaseURL asserts the path that actually reaches the
-// upstream for providers whose base URL carries its own version segment. The
-// handler normalizes every OpenAI-compatible path to /v1/... on the way in, so
-// these providers need the /v1 stripped back off or the version doubles.
+// TestUpstreamPathForOpenAICompatibleProviders asserts the path that actually
+// reaches the upstream once the handler has composed base URL and path. The
+// handler normalizes every OpenAI-compatible path to /v1/... on the way in, and
+// these providers' base URLs stop before the version, so the upstream must see
+// exactly one /v1 whether or not the client sent it, after any base URL prefix.
 //
-// gemini-openai has the same shape and shipped broken this way — it sent
+// gemini-openai is the inverse case (its base URL carries the version, so the
+// /v1 is stripped back off) and shipped broken once — it sent
 // /v1beta/openai/v1/chat/completions, which Google 404s. It has no config entry
 // to point at a test server, so its composed URL is asserted by
 // provider.TestUpstreamURLComposition instead.
-func TestUpstreamPathForVersionedBaseURL(t *testing.T) {
+func TestUpstreamPathForOpenAICompatibleProviders(t *testing.T) {
 	tests := []struct {
 		provider string
 		// clientPath is what the caller sends; wantPath is what the upstream
@@ -92,11 +94,12 @@ func TestUpstreamPathForVersionedBaseURL(t *testing.T) {
 		clientPath string
 		wantPath   string
 	}{
-		{"deepinfra", "/v1/chat/completions", "/v1/openai/chat/completions"},
-		{"deepinfra", "/chat/completions", "/v1/openai/chat/completions"},
-		{"novita", "/v1/chat/completions", "/openai/v1/chat/completions"},
-		// Unversioned base URL: the normalized /v1 must survive untouched.
-		{"nebius", "/chat/completions", "/v1/chat/completions"},
+		// Base URL with a path prefix before the version.
+		{"fireworks", "/v1/chat/completions", "/inference/v1/chat/completions"},
+		{"fireworks", "/chat/completions", "/inference/v1/chat/completions"},
+		// Bare-origin base URL: the normalized /v1 must survive untouched.
+		{"together", "/chat/completions", "/v1/chat/completions"},
+		{"baseten", "/v1/chat/completions", "/v1/chat/completions"},
 	}
 
 	for _, tt := range tests {
@@ -116,9 +119,9 @@ func TestUpstreamPathForVersionedBaseURL(t *testing.T) {
 			// The provider's real base URL path prefix, appended to the test
 			// server origin so the composed path is what the handler produced.
 			prefix := map[string]string{
-				"deepinfra": "/v1/openai",
-				"novita":    "/openai",
-				"nebius":    "",
+				"fireworks": "/inference",
+				"together":  "",
+				"baseten":   "",
 			}[tt.provider]
 
 			apiKey := &models.APIKey{ID: uuid.New(), KeyHash: auth.HashAPIKey("test-api-key"), IsActive: true}
@@ -129,12 +132,12 @@ func TestUpstreamPathForVersionedBaseURL(t *testing.T) {
 				Server: config.ServerConfig{UpstreamTimeout: 10 * time.Second, StreamHeaderTimeout: 5 * time.Second},
 			}
 			switch tt.provider {
-			case "deepinfra":
-				cfg.Providers.DeepInfra = providerCfg
-			case "novita":
-				cfg.Providers.Novita = providerCfg
-			case "nebius":
-				cfg.Providers.Nebius = providerCfg
+			case "fireworks":
+				cfg.Providers.Fireworks = providerCfg
+			case "together":
+				cfg.Providers.Together = providerCfg
+			case "baseten":
+				cfg.Providers.Baseten = providerCfg
 			}
 			logs := &capturingLogWriter{ch: make(chan *models.RequestLog, 1)}
 			h := NewHandler(logs, pricingSvc, newDeprecatedService(t, deprecatedModelJSON), resolver, cfg, nil)

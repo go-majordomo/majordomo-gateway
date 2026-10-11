@@ -55,23 +55,23 @@ func TestResolvePerProviderOverride(t *testing.T) {
 	s := &Service{
 		pricing: map[string]ModelPricing{
 			// Model-default (the "canonical" provider's price).
-			"deepseek-ai/DeepSeek-V4-Pro": {InputPricePerMillion: 2.1, OutputPricePerMillion: 4.4},
+			"deepseek-ai/DeepSeek-V4-Pro-0813": {InputPricePerMillion: 2.1, OutputPricePerMillion: 4.4},
 		},
 		byProvider: map[string]map[string]ModelPricing{
-			"baseten": {"deepseek-ai/DeepSeek-V4-Pro": {InputPricePerMillion: 1.5, OutputPricePerMillion: 3.0}},
+			"baseten": {"deepseek-ai/DeepSeek-V4-Pro-0813": {InputPricePerMillion: 1.5, OutputPricePerMillion: 3.0}},
 		},
 	}
 
 	// Provider with an override resolves to the override.
-	if p, ok := s.resolve("baseten", "deepseek-ai/DeepSeek-V4-Pro"); !ok || p.InputPricePerMillion != 1.5 {
+	if p, ok := s.resolve("baseten", "deepseek-ai/DeepSeek-V4-Pro-0813"); !ok || p.InputPricePerMillion != 1.5 {
 		t.Errorf("baseten override = (%+v, %v), want input 1.5", p, ok)
 	}
 	// Provider without an override falls back to the model default.
-	if p, ok := s.resolve("together", "deepseek-ai/DeepSeek-V4-Pro"); !ok || p.InputPricePerMillion != 2.1 {
+	if p, ok := s.resolve("together", "deepseek-ai/DeepSeek-V4-Pro-0813"); !ok || p.InputPricePerMillion != 2.1 {
 		t.Errorf("together fallback = (%+v, %v), want input 2.1 (model default)", p, ok)
 	}
 	// Empty provider uses the model default.
-	if p, ok := s.resolve("", "deepseek-ai/DeepSeek-V4-Pro"); !ok || p.InputPricePerMillion != 2.1 {
+	if p, ok := s.resolve("", "deepseek-ai/DeepSeek-V4-Pro-0813"); !ok || p.InputPricePerMillion != 2.1 {
 		t.Errorf("no-provider = (%+v, %v), want input 2.1", p, ok)
 	}
 }

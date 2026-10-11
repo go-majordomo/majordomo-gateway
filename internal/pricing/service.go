@@ -3,6 +3,7 @@ package pricing
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -76,6 +77,11 @@ type Endpoint struct {
 	Region          string
 	ZDR             bool
 	DataCollection  string
+	// RequestDefaults are request-body fields the router adds when it rewrites a
+	// request for this endpoint and the caller left them unset. Keyed by top-level
+	// field name; nil when the endpoint carries no defaults. Shared across
+	// requests, so it must be treated as read-only.
+	RequestDefaults map[string]json.RawMessage
 }
 
 // catalogFile is the on-disk shape of model_catalog.json: provider sections
@@ -97,7 +103,14 @@ type providerSection struct {
 type routeEntry struct {
 	Provider string `json:"provider"`
 	Model    string `json:"model"`
+	// RequestDefaults is optional. It exists per route entry rather than per
+	// model because the same setting behaves differently on each provider.
+	RequestDefaults map[string]json.RawMessage `json:"request_defaults"`
 }
+
+// routedModelField is the request-body field the router owns on a routed
+// request. A request default may never set it.
+const routedModelField = "model"
 
 type Service struct {
 	remoteURL       string
@@ -167,40 +180,91 @@ func (s *Service) loadAliases() {
 	slog.Info("loaded model aliases", "count", len(aliases))
 }
 
+// loadPricing performs the initial price load. A failure leaves the service
+// unpriced until the next refresh; it is logged rather than returned because
+// the gateway must still proxy requests without cost attribution.
 func (s *Service) loadPricing() {
-	if s.remoteURL != "" {
-		if err := s.fetchRemote(); err != nil {
-			slog.Warn("failed to fetch remote pricing, using local catalog", "error", err)
-			s.loadLocal()
-			return
-		}
-		// Merge local catalog entries missing from the remote price feed (so the
-		// catalog supplements models not yet in the remote source) and load the
-		// routing catalog, which only the local file carries.
-		s.mergeLocal()
-	} else {
-		s.loadLocal()
+	if err := s.reload(true); err != nil {
+		slog.Error("failed to load pricing", "error", err)
 	}
 }
 
-func (s *Service) fetchRemote() error {
+// reload rebuilds the price maps and routing catalog and swaps them in under a
+// single lock, so readers never observe remote prices without the local catalog
+// applied on top.
+//
+// The local catalog is authoritative: an entry present there replaces the
+// remote feed's entry for the same model id (and the same provider/model pair).
+// The remote feed only fills in models the catalog does not list. Routes come
+// solely from the catalog.
+//
+// When the remote feed is unreachable, the initial load falls back to the
+// catalog alone, while a refresh returns the error and keeps the current state
+// so remote-only prices already loaded are not dropped. If the catalog cannot
+// be read the remote prices are used alone and the previous routes are kept. An
+// error is always returned when neither source yields data.
+func (s *Service) reload(initial bool) error {
+	localPricing, localByProvider, catalog, localErr := s.readCatalog()
+	if localErr != nil {
+		slog.Error("failed to load model catalog", "error", localErr, "file", s.catalogFile)
+	}
+
+	pricing := make(map[string]ModelPricing)
+	byProvider := make(map[string]map[string]ModelPricing)
+	if s.remoteURL != "" {
+		remotePricing, remoteByProvider, updatedAt, err := s.fetchRemote()
+		if err != nil {
+			if localErr != nil || !initial {
+				return err
+			}
+			slog.Warn("failed to fetch remote pricing, using local catalog only", "error", err)
+		} else {
+			pricing, byProvider = remotePricing, remoteByProvider
+			slog.Info("fetched remote pricing", "models", len(pricing), "providers", len(byProvider), "updated_at", updatedAt)
+		}
+	} else if localErr != nil {
+		return localErr
+	}
+
+	overridden := overlayCatalog(pricing, byProvider, localPricing, localByProvider)
+
+	s.mu.Lock()
+	s.pricing = pricing
+	s.byProvider = byProvider
+	if localErr == nil {
+		s.catalog = catalog
+	}
+	routes := len(s.catalog)
+	s.mu.Unlock()
+
+	slog.Info("loaded pricing data", "models", len(pricing), "providers", len(byProvider), "routes", routes, "catalog_overrides", overridden)
+	return nil
+}
+
+// fetchRemote downloads the remote price feed and returns it as a model-default
+// price map and a per-provider price index. It does not modify the service.
+func (s *Service) fetchRemote() (map[string]ModelPricing, map[string]map[string]ModelPricing, string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.remoteURL, nil)
 	if err != nil {
-		return err
+		return nil, nil, "", fmt.Errorf("fetch remote pricing: %w", err)
 	}
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return err
+		return nil, nil, "", fmt.Errorf("fetch remote pricing: %w", err)
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, nil, "", fmt.Errorf("fetch remote pricing: unexpected status %d", resp.StatusCode)
+	}
+
 	var remoteResp remotePricingResponse
 	if err := json.NewDecoder(resp.Body).Decode(&remoteResp); err != nil {
-		return err
+		return nil, nil, "", fmt.Errorf("fetch remote pricing: decode response: %w", err)
 	}
 
 	pricing := make(map[string]ModelPricing)
@@ -226,73 +290,47 @@ func (s *Service) fetchRemote() error {
 		}
 	}
 
-	s.mu.Lock()
-	s.pricing = pricing
-	s.byProvider = byProvider
-	s.mu.Unlock()
-
-	slog.Info("loaded pricing data from remote", "models", len(pricing), "providers", len(byProvider), "updated_at", remoteResp.UpdatedAt)
-	return nil
+	return pricing, byProvider, remoteResp.UpdatedAt, nil
 }
 
-func (s *Service) loadLocal() {
+// readCatalog reads and parses the local model catalog file.
+func (s *Service) readCatalog() (map[string]ModelPricing, map[string]map[string]ModelPricing, map[string][]Endpoint, error) {
 	data, err := os.ReadFile(s.catalogFile)
 	if err != nil {
-		slog.Error("failed to load model catalog", "error", err, "file", s.catalogFile)
-		return
+		return nil, nil, nil, fmt.Errorf("read model catalog: %w", err)
 	}
 
 	pricing, byProvider, catalog, err := parseCatalog(data)
 	if err != nil {
-		slog.Error("failed to parse model catalog", "error", err, "file", s.catalogFile)
-		return
+		return nil, nil, nil, fmt.Errorf("parse model catalog: %w", err)
 	}
-
-	s.mu.Lock()
-	s.pricing = pricing
-	s.byProvider = byProvider
-	s.catalog = catalog
-	s.mu.Unlock()
-
-	slog.Info("loaded model catalog", "models", len(pricing), "providers", len(byProvider), "routes", len(catalog))
+	return pricing, byProvider, catalog, nil
 }
 
-func (s *Service) mergeLocal() {
-	data, err := os.ReadFile(s.catalogFile)
-	if err != nil {
-		return
-	}
-
-	pricing, byProvider, catalog, err := parseCatalog(data)
-	if err != nil {
-		return
-	}
-
-	s.mu.Lock()
-	added := 0
-	for model, mp := range pricing {
-		if _, exists := s.pricing[model]; !exists {
-			s.pricing[model] = mp
-			added++
+// overlayCatalog writes the local catalog's prices over the given price maps in
+// place, replacing any entry with the same model id (model-default map) or the
+// same provider and model id (per-provider index). It returns how many existing
+// entries were replaced.
+func overlayCatalog(pricing map[string]ModelPricing, byProvider map[string]map[string]ModelPricing, localPricing map[string]ModelPricing, localByProvider map[string]map[string]ModelPricing) int {
+	overridden := 0
+	for model, mp := range localPricing {
+		if _, exists := pricing[model]; exists {
+			overridden++
 		}
+		pricing[model] = mp
 	}
-	for prov, models := range byProvider {
-		if s.byProvider[prov] == nil {
-			s.byProvider[prov] = make(map[string]ModelPricing)
+	for prov, models := range localByProvider {
+		if byProvider[prov] == nil {
+			byProvider[prov] = make(map[string]ModelPricing, len(models))
 		}
 		for model, mp := range models {
-			if _, exists := s.byProvider[prov][model]; !exists {
-				s.byProvider[prov][model] = mp
-				added++
+			if _, exists := byProvider[prov][model]; exists {
+				overridden++
 			}
+			byProvider[prov][model] = mp
 		}
 	}
-	s.catalog = catalog // routes are only in the local file
-	s.mu.Unlock()
-
-	if added > 0 {
-		slog.Info("merged catalog pricing missing from remote", "count", added)
-	}
+	return overridden
 }
 
 // parseCatalog parses model_catalog.json into the model-default price map, the
@@ -300,7 +338,8 @@ func (s *Service) mergeLocal() {
 // provider section's models; the flat default is populated in sorted-provider
 // order (first provider that lists a model id owns the default, for stability).
 // The routing catalog joins each routes entry to its provider section; entries
-// referencing an unknown provider or model are skipped with a warning.
+// referencing an unknown provider or model, or whose request_defaults set the
+// model field, are skipped with a warning.
 func parseCatalog(data []byte) (map[string]ModelPricing, map[string]map[string]ModelPricing, map[string][]Endpoint, error) {
 	var cf catalogFile
 	if err := json.Unmarshal(data, &cf); err != nil {
@@ -339,6 +378,10 @@ func parseCatalog(data []byte) (map[string]ModelPricing, map[string]map[string]M
 				slog.Warn("catalog route references unknown model", "slug", slug, "provider", re.Provider, "model", re.Model)
 				continue
 			}
+			if _, ok := re.RequestDefaults[routedModelField]; ok {
+				slog.Warn("catalog route request_defaults must not set the model", "slug", slug, "provider", re.Provider, "model", re.Model)
+				continue
+			}
 			catalog[slug] = append(catalog[slug], Endpoint{
 				Provider:        re.Provider,
 				BaseURL:         sec.BaseURL,
@@ -346,6 +389,7 @@ func parseCatalog(data []byte) (map[string]ModelPricing, map[string]map[string]M
 				Region:          sec.Region,
 				ZDR:             sec.ZDR,
 				DataCollection:  sec.DataCollection,
+				RequestDefaults: re.RequestDefaults,
 			})
 		}
 	}
@@ -368,10 +412,8 @@ func (s *Service) refreshLoop() {
 	for {
 		select {
 		case <-ticker.C:
-			if err := s.fetchRemote(); err != nil {
+			if err := s.reload(false); err != nil {
 				slog.Warn("failed to refresh pricing", "error", err)
-			} else {
-				s.mergeLocal()
 			}
 		case <-s.done:
 			return

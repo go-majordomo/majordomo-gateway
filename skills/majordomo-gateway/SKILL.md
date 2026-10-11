@@ -78,7 +78,7 @@ client = anthropic.Anthropic(
     api_key=os.environ["ANTHROPIC_API_KEY"],
 )
 resp = client.messages.create(
-    model="claude-sonnet-4-6",
+    model="claude-sonnet-5-5",
     max_tokens=1024,
     messages=[{"role": "user", "content": "Hello!"}],
     extra_headers={"X-Majordomo-Key": os.environ["MAJORDOMO_API_KEY"]},

@@ -113,40 +113,10 @@ func TestProviderDetect(t *testing.T) {
 			wantProvider: ProviderTogether,
 		},
 		{
-			name:         "explicit deepseek header overrides openai path detection",
-			path:         "/v1/chat/completions",
-			headers:      map[string]string{"x-majordomo-provider": "deepseek"},
-			wantProvider: ProviderDeepSeek,
-		},
-		{
-			name:         "explicit moonshot header",
-			path:         "/v1/chat/completions",
-			headers:      map[string]string{"x-majordomo-provider": "moonshot"},
-			wantProvider: ProviderMoonshot,
-		},
-		{
-			name:         "explicit baseten header",
+			name:         "explicit baseten header overrides openai path detection",
 			path:         "/v1/chat/completions",
 			headers:      map[string]string{"x-majordomo-provider": "baseten"},
 			wantProvider: ProviderBaseten,
-		},
-		{
-			name:         "explicit nebius header",
-			path:         "/v1/chat/completions",
-			headers:      map[string]string{"x-majordomo-provider": "nebius"},
-			wantProvider: ProviderNebius,
-		},
-		{
-			name:         "explicit deepinfra header",
-			path:         "/v1/chat/completions",
-			headers:      map[string]string{"x-majordomo-provider": "deepinfra"},
-			wantProvider: ProviderDeepInfra,
-		},
-		{
-			name:         "explicit novita header",
-			path:         "/v1/chat/completions",
-			headers:      map[string]string{"x-majordomo-provider": "novita"},
-			wantProvider: ProviderNovita,
 		},
 		{
 			name:         "explicit fireworks header case insensitive",
@@ -238,12 +208,7 @@ func TestGetParser(t *testing.T) {
 		{ProviderAzure, "*provider.OpenAIParser"},            // Azure uses OpenAI parser
 		{ProviderFireworks, "*provider.OpenAIParser"},        // Fireworks is OpenAI-compatible
 		{ProviderTogether, "*provider.OpenAIParser"},         // Together is OpenAI-compatible
-		{ProviderDeepSeek, "*provider.OpenAIParser"},         // DeepSeek is OpenAI-compatible
-		{ProviderMoonshot, "*provider.OpenAIParser"},         // Moonshot is OpenAI-compatible
 		{ProviderBaseten, "*provider.OpenAIParser"},          // Baseten is OpenAI-compatible
-		{ProviderNebius, "*provider.OpenAIParser"},           // Nebius is OpenAI-compatible
-		{ProviderDeepInfra, "*provider.OpenAIParser"},        // DeepInfra is OpenAI-compatible
-		{ProviderNovita, "*provider.OpenAIParser"},           // Novita is OpenAI-compatible
 		{ProviderBedrockMantle, "*provider.AnthropicParser"}, // Bedrock Mantle speaks Anthropic Messages
 		{ProviderUnknown, "*provider.OpenAIParser"},          // Unknown defaults to OpenAI
 	}
@@ -306,14 +271,8 @@ func TestUpstreamURLComposition(t *testing.T) {
 		{ProviderOpenAI, "https://api.openai.com/v1/chat/completions"},
 		{ProviderFireworks, "https://api.fireworks.ai/inference/v1/chat/completions"},
 		{ProviderTogether, "https://api.together.xyz/v1/chat/completions"},
-		{ProviderDeepSeek, "https://api.deepseek.com/v1/chat/completions"},
-		{ProviderMoonshot, "https://api.moonshot.ai/v1/chat/completions"},
 		{ProviderBaseten, "https://inference.baseten.co/v1/chat/completions"},
-		{ProviderNebius, "https://api.studio.nebius.com/v1/chat/completions"},
-		// Path prefix before the version; matches the documented curl exactly.
-		{ProviderNovita, "https://api.novita.ai/openai/v1/chat/completions"},
-		// Versioned base URLs: the /v1 belongs to the base, not the path.
-		{ProviderDeepInfra, "https://api.deepinfra.com/v1/openai/chat/completions"},
+		// Versioned base URL: the version belongs to the base, not the path.
 		{ProviderGeminiOpenAI, "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"},
 	}
 
@@ -379,8 +338,7 @@ func TestNormalizeStripRoundTrip(t *testing.T) {
 // a provider that is configured everywhere and silently never routed to.
 func TestIsCredentialProvider(t *testing.T) {
 	for _, name := range []string{
-		"openai", "anthropic", "gemini", "fireworks", "together",
-		"deepseek", "moonshot", "baseten", "nebius", "deepinfra", "novita",
+		"openai", "anthropic", "gemini", "fireworks", "together", "baseten",
 	} {
 		t.Run(name, func(t *testing.T) {
 			if !IsCredentialProvider(name) {
@@ -389,7 +347,11 @@ func TestIsCredentialProvider(t *testing.T) {
 		})
 	}
 
-	for _, name := range []string{"majordomo", "bedrock", "not-a-provider", ""} {
+	for _, name := range []string{
+		"majordomo", "bedrock", "not-a-provider", "",
+		// No longer supported: a key stored for one of these could never be used.
+		"deepseek", "moonshot", "nebius", "deepinfra", "novita",
+	} {
 		t.Run("rejects/"+name, func(t *testing.T) {
 			if IsCredentialProvider(name) {
 				t.Errorf("IsCredentialProvider(%q) = true, want false", name)

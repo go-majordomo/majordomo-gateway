@@ -51,8 +51,7 @@ func TestProviderKeyService_UpsertKey_UnknownProvider(t *testing.T) {
 // stored for it and the router silently never selects it.
 func TestProviderKeyService_UpsertKey_AcceptsRoutableProviders(t *testing.T) {
 	for _, name := range []string{
-		"openai", "anthropic", "gemini", "fireworks", "together",
-		"deepseek", "moonshot", "baseten", "nebius", "deepinfra", "novita",
+		"openai", "anthropic", "gemini", "fireworks", "together", "baseten",
 	} {
 		t.Run(name, func(t *testing.T) {
 			store := &fakeProviderKeyStore{}

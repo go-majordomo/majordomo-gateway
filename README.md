@@ -7,8 +7,7 @@ your agents actually cost — sliced by model, provider, API key, or metadata, a
 rolled up into per-run cost waterfalls.
 
 - **Provider-agnostic proxy** — OpenAI, Anthropic, Gemini, Bedrock, and
-  OpenAI-compatible providers (Fireworks, Together, DeepSeek, Moonshot, Baseten,
-  Nebius, DeepInfra, Novita).
+  OpenAI-compatible providers (Fireworks, Together, Baseten).
 - **Your keys, relayed** — by default the gateway forwards the caller's own provider
   key upstream and stores no provider credentials.
 - **Provider routing (optional)** — opt in and the gateway routes a virtual model slug
@@ -44,7 +43,7 @@ export GATEWAY_TOKEN=<the ADMIN_TOKEN you set>
 gateway-cli keys create --name billing-service
 curl http://localhost:6560/v1/chat/completions \
   -H "X-Majordomo-Key: mdm_sk_..." -H "Authorization: Bearer $OPENAI_API_KEY" \
-  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hello"}]}'
+  -d '{"model":"gpt-5-nano","messages":[{"role":"user","content":"Hello"}]}'
 
 # 3. See what it cost
 gateway-cli usage summary
@@ -85,10 +84,47 @@ you can see which upstream served the request and the provider-native model id t
 was rewritten to. The decision (provider, reason, original slug) is recorded on the
 request log and surfaced by `gateway-cli usage request <id>`.
 
+Routable slugs: `kimi-k3`, `glm-5.2`, `glm-5.3`, `glm-5.3-flash`,
+`deepseek-v4-pro-0813`, `deepseek-v4.1-flash`, `qwen3.8-2.4t-a95b`, and `inkling`,
+served by Fireworks, Together, and Baseten.
+
 **How an endpoint is chosen.** Candidates for the slug are hard-filtered — a stored
 credential first, then the request's data policy, then recent health (error rate over
 the request log) — and the survivors are cost-weighted (cheaper wins more often). The
 routable slugs and their candidate providers live in `model_catalog.json`.
+
+**Request defaults.** A route entry in `model_catalog.json` may carry
+`request_defaults`: body fields the gateway adds when it routes a request to that
+endpoint.
+
+```json
+"glm-5.3": [
+  {"provider": "together", "model": "zai-org/GLM-5.3",
+   "request_defaults": {"reasoning_effort": "low"}},
+  {"provider": "baseten", "model": "zai-org/GLM-5.3",
+   "request_defaults": {"reasoning_effort": "low"}}
+]
+```
+
+These exist because the hosts run most open-weight models with reasoning on at the
+highest tier and bill it as output tokens, and a routing client cannot know which
+host will serve it. Defaults are set per endpoint because the same value behaves
+differently on each host and model, so an entry with no `request_defaults` is a
+deliberate choice, not an omission. Baseten's GLM-5.2, for example, reasons only
+when a reasoning field is sent, so it carries none.
+
+- The caller always wins. A default is added only when the request body does not
+  already set that field; an explicit `null` counts as set.
+- `reasoning_effort`, `reasoning`, and `thinking` are treated as one decision. A
+  request that sets any of them receives no reasoning default, even if the default
+  uses a different one of the three.
+- Values can be any JSON, so `{"thinking": {"type": "disabled"}}` is valid.
+- A default may not set `model`; such an entry is dropped from the route.
+- Defaults apply only to routed requests. A request that names a concrete provider
+  is forwarded as sent.
+
+When defaults are added, the response carries `X-Majordomo-Routed-Defaults` with the
+field names, and the routing reason on the request log records them.
 
 **Data policy (optional).** Tighten which endpoints are eligible with per-request
 headers, on top of the deployment defaults (`ROUTING_DEFAULT_REQUIRE_ZDR`,
@@ -162,7 +198,7 @@ Register it with Claude Code, pointing it at your gateway:
 claude mcp add gateway -- gateway-mcp --api-url http://localhost:6560 --token $GATEWAY_TOKEN
 ```
 
-Then ask in natural language — e.g. *"what did the billing-service spend on gpt-4o
+Then ask in natural language — e.g. *"what did the billing-service spend on gpt-5-nano
 last week?"* or *"show me the most expensive agent run yesterday."* The server exposes
 `usage_summary`, `usage_by_model`, `usage_by_provider`, `usage_by_api_key`,
 `usage_by_metadata`, `list_requests`, `get_request`, `error_summary`,
@@ -186,11 +222,38 @@ last week?"* or *"show me the most expensive agent run yesterday."* The server e
 | `BODY_STORAGE` | | `none` (default), `s3`, or `gcs` — see "Archiving bodies" below |
 | `LOG_LEVEL` | | `debug`, `info`, `warn`, `error` (default `info`) |
 
-Provider base URLs (`OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`, `FIREWORKS_BASE_URL`,
-`MOONSHOT_BASE_URL`, …) can be overridden to route through a local proxy or mock.
-OpenAI-compatible providers (Fireworks, Together, DeepSeek, Moonshot, Baseten,
-Nebius, DeepInfra, Novita) share OpenAI's request paths — select them with the
-`X-Majordomo-Provider` header (e.g. `X-Majordomo-Provider: deepseek`).
+Provider base URLs (`OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`, `GEMINI_BASE_URL`,
+`FIREWORKS_BASE_URL`, `TOGETHER_BASE_URL`, `BASETEN_BASE_URL`) can be overridden to
+route through a local proxy or mock. OpenAI-compatible providers (Fireworks,
+Together, Baseten) share OpenAI's request paths — select them with the
+`X-Majordomo-Provider` header (e.g. `X-Majordomo-Provider: together`).
+
+### Pricing
+
+Cost is computed per request from two sources:
+
+| Variable | Description |
+|---|---|
+| `MODEL_CATALOG_FILE` | Local catalog of prices and routes (default `./model_catalog.json`) |
+| `PRICING_REMOTE_URL` | Remote price feed (default `https://www.llm-prices.com/current-v1.json`) |
+| `PRICING_REFRESH_INTERVAL` | How often both sources are reloaded (default `1h`) |
+| `PRICING_ALIASES_FILE` | Maps model names returned by providers to catalog names (default `./model_aliases.json`) |
+| `DEPRECATED_MODELS_FILE` | Maps retired model ids to their replacements (default `./deprecated_models.json`) |
+
+The catalog is authoritative. A model listed in `model_catalog.json` is always
+priced from the catalog, even when the remote feed lists the same model at a
+different price. The remote feed only supplies prices for models the catalog does
+not list, so traffic to a model you have not registered can still be costed.
+
+- Remote feed unreachable at startup: prices come from the catalog alone.
+- Remote feed unreachable on a later refresh: the prices already loaded are kept.
+- Catalog unreadable: prices come from the remote feed alone and the routes already
+  loaded are kept.
+
+A request for a model that neither source prices is still proxied and logged, with
+no cost attached. To add or reprice a model, edit its entry under
+`providers.<provider>.models`; to make it routable, add a `routes` entry with at
+least two endpoints.
 
 ## Archiving request/response bodies
 

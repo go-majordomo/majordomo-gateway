@@ -121,7 +121,7 @@ curl http://localhost:6560/v1/chat/completions \
   -H "X-Majordomo-Key: $MDM_KEY" \
   -H "Authorization: Bearer $OPENAI_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hello!"}]}'
+  -d '{"model":"gpt-5-nano","messages":[{"role":"user","content":"Hello!"}]}'
 ```
 
 You get the provider's normal response back. Behind the scenes the gateway priced the
@@ -149,7 +149,7 @@ Tag requests with `X-Majordomo-*` headers (the `x-majordomo-` prefix becomes the
 curl http://localhost:6560/v1/chat/completions \
   -H "X-Majordomo-Key: $MDM_KEY" -H "Authorization: Bearer $OPENAI_API_KEY" \
   -H "X-Majordomo-Feature: onboarding" \
-  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}'
+  -d '{"model":"gpt-5-nano","messages":[{"role":"user","content":"hi"}]}'
 ```
 
 The gateway auto-discovers each metadata key and tracks its approximate cardinality,
@@ -179,12 +179,12 @@ TRACE=run_$(openssl rand -hex 6)
 curl http://localhost:6560/v1/chat/completions \
   -H "X-Majordomo-Key: $MDM_KEY" -H "Authorization: Bearer $OPENAI_API_KEY" \
   -H "X-Majordomo-Trace-Id: $TRACE" -H "X-Majordomo-Span-Path: planner" \
-  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"plan"}]}'
+  -d '{"model":"gpt-5-nano","messages":[{"role":"user","content":"plan"}]}'
 # call 2 — a tool step under the planner
 curl http://localhost:6560/v1/chat/completions \
   -H "X-Majordomo-Key: $MDM_KEY" -H "Authorization: Bearer $OPENAI_API_KEY" \
   -H "X-Majordomo-Trace-Id: $TRACE" -H "X-Majordomo-Span-Path: planner/tool:search" \
-  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"search"}]}'
+  -d '{"model":"gpt-5-nano","messages":[{"role":"user","content":"search"}]}'
 ```
 
 Then render the run's cost waterfall:
@@ -206,7 +206,7 @@ claude mcp add gateway -- gateway-mcp --api-url http://localhost:6560 --token $A
 (Use the full path to the binary — e.g. `.../majordomo-gateway/bin/gateway-mcp` — if
 it isn't on your `PATH`.)
 
-Now ask in natural language: *"what did the billing-service spend on gpt-4o-mini this
+Now ask in natural language: *"what did the billing-service spend on gpt-5-nano this
 week?"* or *"show me the most expensive agent run today."* Claude calls the gateway's
 tools — `usage_summary`, `usage_by_model`, `usage_by_metadata`, `list_runs`,
 `get_run_tree`, and more.

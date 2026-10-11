@@ -77,12 +77,7 @@ func NewHandler(
 		provider.ProviderGemini:    cfg.Providers.Gemini.BaseURL,
 		provider.ProviderFireworks: cfg.Providers.Fireworks.BaseURL,
 		provider.ProviderTogether:  cfg.Providers.Together.BaseURL,
-		provider.ProviderDeepSeek:  cfg.Providers.DeepSeek.BaseURL,
-		provider.ProviderMoonshot:  cfg.Providers.Moonshot.BaseURL,
 		provider.ProviderBaseten:   cfg.Providers.Baseten.BaseURL,
-		provider.ProviderNebius:    cfg.Providers.Nebius.BaseURL,
-		provider.ProviderDeepInfra: cfg.Providers.DeepInfra.BaseURL,
-		provider.ProviderNovita:    cfg.Providers.Novita.BaseURL,
 	}
 
 	h := &Handler{
@@ -223,13 +218,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			httputil.WriteJSONError(w, http.StatusBadGateway, "failed to resolve provider credential for routed request")
 			return
 		}
-		overridden, err := OverrideModel(upstreamBody, decision.ProviderModelID)
+		rewritten, appliedDefaults, err := RewriteRoutedRequest(upstreamBody, decision.ProviderModelID, decision.RequestDefaults)
 		if err != nil {
-			slog.Error("routing: failed to override model", "error", err, "request_id", requestID)
+			slog.Error("routing: failed to rewrite request", "error", err, "request_id", requestID)
 			httputil.WriteJSONError(w, http.StatusInternalServerError, "failed to prepare routed request")
 			return
 		}
-		upstreamBody = overridden
+		upstreamBody = rewritten
 		providerInfo.Provider = provider.Provider(decision.Provider)
 		baseURL = decision.BaseURL
 		r.Header.Set("Authorization", "Bearer "+key)
@@ -238,6 +233,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// WriteHeader; copyResponseHeaders only Adds, so these survive to the client.
 		w.Header().Set("X-Majordomo-Routed-Provider", decision.Provider)
 		w.Header().Set("X-Majordomo-Routed-Model", decision.ProviderModelID)
+		// Name the body fields the gateway added for this endpoint, so the client
+		// can see its request was modified, and record them with the routing
+		// reason on the request log.
+		if len(appliedDefaults) > 0 {
+			fields := strings.Join(appliedDefaults, ", ")
+			w.Header().Set("X-Majordomo-Routed-Defaults", fields)
+			decision.Reason += "; applied request defaults: " + fields
+		}
 		routeDecision = decision
 	}
 
@@ -479,7 +482,7 @@ func (h *Handler) logRequest(
 
 		// Attribute the request to the provider it was ROUTED to (from path/header
 		// detection), not the response format. OpenAI-compatible providers
-		// (Fireworks, Together, DeepSeek) all parse with the OpenAI parser, which
+		// (Fireworks, Together, Baseten) all parse with the OpenAI parser, which
 		// would otherwise mislabel them as "openai".
 		Provider:      string(providerInfo.Provider),
 		Model:         metrics.Model,

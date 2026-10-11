@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -78,6 +79,11 @@ type RouteDecision struct {
 	BaseURL         string
 	ProviderModelID string
 	Reason          string
+
+	// RequestDefaults are the chosen endpoint's request-body defaults, applied by
+	// RewriteRoutedRequest. Nil when the endpoint carries none. Read-only: the
+	// map is shared with the routing catalog.
+	RequestDefaults map[string]json.RawMessage
 }
 
 // ProviderRouter selects a provider endpoint for a virtual model slug by
@@ -189,6 +195,7 @@ func (r *ProviderRouter) Route(ctx context.Context, model string, policy DataPol
 		BaseURL:         ep.BaseURL,
 		ProviderModelID: ep.ProviderModelID,
 		Reason:          reason,
+		RequestDefaults: ep.RequestDefaults,
 	}, nil
 }
 
@@ -303,4 +310,68 @@ func (r *ProviderRouter) getHealth(ctx context.Context) *healthSnapshot {
 
 func healthKey(provider, model string) string {
 	return provider + "\x00" + model
+}
+
+// reasoningControlFields are the request-body fields through which a caller
+// controls model reasoning. Providers accept different ones for the same
+// purpose, so they are treated as one decision: a caller that sets any of them
+// has chosen its reasoning behavior, and no reasoning default is added.
+var reasoningControlFields = map[string]struct{}{
+	"reasoning_effort": {},
+	"reasoning":        {},
+	"thinking":         {},
+}
+
+// RewriteRoutedRequest prepares a request body for the endpoint routing chose:
+// it replaces the "model" field with the provider-native model id and adds the
+// endpoint's request defaults. Other fields are preserved.
+//
+// The caller always wins. A default is added only when the body does not already
+// carry that field (an explicit null counts as carrying it), and reasoning
+// defaults are all withheld when the body sets any reasoning control field, even
+// a different one than the default uses.
+//
+// It returns the rewritten body and the names of the defaults that were added,
+// sorted. An error is returned if the body is not a JSON object.
+func RewriteRoutedRequest(body []byte, providerModelID string, defaults map[string]json.RawMessage) ([]byte, []string, error) {
+	var req map[string]json.RawMessage
+	if err := json.Unmarshal(body, &req); err != nil {
+		return nil, nil, fmt.Errorf("unmarshal request body for routed rewrite: %w", err)
+	}
+	if req == nil {
+		return nil, nil, errors.New("unmarshal request body for routed rewrite: body is not a JSON object")
+	}
+
+	modelJSON, err := json.Marshal(providerModelID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal routed model: %w", err)
+	}
+	req["model"] = json.RawMessage(modelJSON)
+
+	callerSetReasoning := false
+	for field := range reasoningControlFields {
+		if _, ok := req[field]; ok {
+			callerSetReasoning = true
+			break
+		}
+	}
+
+	var applied []string
+	for field, value := range defaults {
+		if _, ok := req[field]; ok {
+			continue
+		}
+		if _, isReasoning := reasoningControlFields[field]; isReasoning && callerSetReasoning {
+			continue
+		}
+		req[field] = value
+		applied = append(applied, field)
+	}
+	sort.Strings(applied)
+
+	rewritten, err := json.Marshal(req)
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal routed request body: %w", err)
+	}
+	return rewritten, applied, nil
 }

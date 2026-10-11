@@ -6,8 +6,8 @@ main skill (metadata like `X-Majordomo-Feature`, and the agent-run `X-Majordomo-
 / `X-Majordomo-Span-Path`) work in every recipe — attach them wherever the recipe shows
 `extra_headers`.
 
-Refresh model names as needed. Examples use `claude-sonnet-4-6`, `gpt-5-mini`,
-`gemini-2.5-flash`.
+Refresh model names as needed. Examples use `claude-sonnet-5-5`, `gpt-5-mini`,
+`gemini-3.5-flash`.
 
 ---
 
@@ -28,7 +28,7 @@ HEADERS = {
 }
 
 llm = get_llm_instance(
-    "anthropic", "claude-sonnet-4-6",
+    "anthropic", "claude-sonnet-5-5",
     base_url=GATEWAY,
     default_headers=HEADERS,
 )
@@ -45,7 +45,7 @@ resp = await llm.get_response(
 
 # Cascade — base_url + default_headers propagate to every provider in the list:
 cascade = LLMCascade(
-    [("anthropic", "claude-sonnet-4-6"), ("openai", "gpt-5-mini")],
+    [("anthropic", "claude-sonnet-5-5"), ("openai", "gpt-5-mini")],
     base_url=GATEWAY,
     default_headers=HEADERS,
 )
@@ -90,7 +90,7 @@ openai_settings = OpenAIChatModelSettings(
 
 # --- Anthropic (native provider; gateway root, no /v1) ---
 anthropic_model = AnthropicModel(
-    "claude-sonnet-4-6",
+    "claude-sonnet-5-5",
     provider=AnthropicProvider(
         base_url=GATEWAY,
         api_key=os.environ["ANTHROPIC_API_KEY"],
@@ -102,7 +102,7 @@ anthropic_settings = AnthropicModelSettings(
 
 # --- Gemini (OpenAI-compatible endpoint; add the provider routing header) ---
 gemini_model = OpenAIChatModel(
-    "gemini-2.5-flash",
+    "gemini-3.5-flash",
     provider=OpenAIProvider(openai_client=AsyncOpenAI(
         base_url=f"{GATEWAY}/v1",
         api_key=os.environ["GEMINI_API_KEY"],
@@ -153,7 +153,7 @@ openai_model = OpenAIChat(
 
 # --- Anthropic (via OpenAI-compatible translation) ---
 anthropic_model = OpenAILike(
-    id="claude-sonnet-4-6",
+    id="claude-sonnet-5-5",
     api_key=os.environ["ANTHROPIC_API_KEY"],
     base_url=f"{GATEWAY}/v1",
     extra_headers=mdm_headers(**{
@@ -164,7 +164,7 @@ anthropic_model = OpenAILike(
 
 # --- Gemini (via OpenAI-compatible translation) ---
 gemini_model = OpenAILike(
-    id="gemini-2.5-flash",
+    id="gemini-3.5-flash",
     api_key=os.environ["GEMINI_API_KEY"],
     base_url=f"{GATEWAY}/v1",
     extra_headers=mdm_headers(**{
@@ -276,9 +276,7 @@ and `createOpenAI({ baseURL, apiKey, fetch })`. Pydantic AI's current model clas
 | OpenAI | (default on `/v1/chat/completions`) | — |
 | Anthropic | `anthropic` (native `/v1/messages`) | `anthropic-openai` |
 | Gemini | `gemini` | `gemini-openai` |
-| Fireworks / Together / DeepSeek | — | `fireworks` / `together` / `deepseek` |
-| Moonshot (Kimi) / Baseten / Nebius | — | `moonshot` / `baseten` / `nebius` |
-| DeepInfra / Novita | — | `deepinfra` / `novita` |
+| Fireworks / Together / Baseten | — | `fireworks` / `together` / `baseten` |
 
 Set `X-Majordomo-Provider` explicitly whenever the request path can't disambiguate the
 provider (i.e. anything going through the OpenAI-compatible `/v1/chat/completions` path).
