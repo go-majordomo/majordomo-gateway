@@ -175,6 +175,64 @@ func TestCalculate_CacheCreationWithoutTTLBreakdown(t *testing.T) {
 	}
 }
 
+// Some models charge a higher rate for every token of a request whose prompt
+// is above a threshold. These are the two requests of a real `claude -p` run
+// on Claude Haiku 5.5 (100K threshold); Claude Code billed them $0.2742071.
+func TestCalculate_LongContextTier(t *testing.T) {
+	s := &Service{
+		pricing: map[string]ModelPricing{
+			"claude-haiku-5-5": {
+				InputPricePerMillion:  0.1,
+				OutputPricePerMillion: 0.5,
+				CachedPricePerMillion: 0.01,
+				LongContext: &LongContextPricing{
+					ThresholdTokens:       100_000,
+					InputPricePerMillion:  0.5,
+					OutputPricePerMillion: 2.5,
+					CachedPricePerMillion: 0.05,
+				},
+			},
+		},
+	}
+
+	small := s.Calculate(&models.UsageMetrics{Model: "claude-haiku-5-5", InputTokens: 1171, OutputTokens: 16})
+	assertClose(t, "small TotalCost", small.TotalCost, (1171*0.1+16*0.5)/1e6)
+
+	large := s.Calculate(&models.UsageMetrics{
+		Model:                 "claude-haiku-5-5",
+		InputTokens:           274073, // normalized total: 2 fresh + 274071 written
+		OutputTokens:          4,
+		CacheCreationTokens:   274071,
+		CacheCreation1hTokens: 274071,
+	})
+	assertClose(t, "large TotalCost", large.TotalCost, (2*0.5+274071*2*0.5+4*2.5)/1e6)
+	assertClose(t, "session total", small.TotalCost+large.TotalCost, 0.2742071)
+
+	// A slice of a large prompt is priced at the large prompt's rate.
+	slice := s.Calculate(&models.UsageMetrics{Model: "claude-haiku-5-5", InputTokens: 1000, CachedTokens: 1000, PromptTokens: 274073})
+	assertClose(t, "slice TotalCost", slice.TotalCost, 1000*0.05/1e6)
+
+	// Exactly at the threshold is still the base rate.
+	edge := s.Calculate(&models.UsageMetrics{Model: "claude-haiku-5-5", InputTokens: 100_000, CachedTokens: 100_000})
+	assertClose(t, "edge TotalCost", edge.TotalCost, 100_000*0.01/1e6)
+}
+
+func TestParseCatalog_LongContext(t *testing.T) {
+	const catalogJSON = `{"providers":{"anthropic":{"models":{
+		"m": {"input_price_per_million": 1, "output_price_per_million": 5, "cached_price_per_million": 0.1,
+		      "long_context": {"threshold_tokens": 100000, "input_price_per_million": 2, "output_price_per_million": 10}}}}}}`
+	pricing, _, _, err := parseCatalog([]byte(catalogJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lc := pricing["m"].LongContext
+	if lc == nil || lc.ThresholdTokens != 100000 || lc.InputPricePerMillion != 2 || lc.OutputPricePerMillion != 10 {
+		t.Fatalf("long_context = %+v", lc)
+	}
+	// No long-context cache-read price given: scaled by the input ratio (2x).
+	assertClose(t, "long cached", lc.CachedPricePerMillion, 0.2)
+}
+
 func TestCalculate_UnknownModel(t *testing.T) {
 	s := &Service{pricing: map[string]ModelPricing{}}
 	cost := s.Calculate(&models.UsageMetrics{Model: "does-not-exist"})
@@ -397,4 +455,21 @@ func TestParseCatalog_RequestDefaults(t *testing.T) {
 	if d := byProvider["baseten"].RequestDefaults; d != nil {
 		t.Errorf("an entry without request_defaults must carry none, got %v", d)
 	}
+}
+
+// The shipped catalog prices large Claude Haiku 5.5 prompts at the higher rate.
+func TestShippedModelCatalog_HaikuLongContext(t *testing.T) {
+	data, err := os.ReadFile("../../model_catalog.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pricing, _, _, err := parseCatalog(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lc := pricing["claude-haiku-5-5"].LongContext
+	if lc == nil || lc.ThresholdTokens != 100_000 || lc.InputPricePerMillion != 0.5 || lc.OutputPricePerMillion != 2.5 {
+		t.Fatalf("claude-haiku-5-5 long_context = %+v", lc)
+	}
+	assertClose(t, "long cached", lc.CachedPricePerMillion, 0.05)
 }

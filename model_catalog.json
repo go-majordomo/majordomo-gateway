@@ -1,5 +1,5 @@
 {
-  "_comment": "Single source of truth for model prices, routing endpoints, and provider data posture. providers.<p>: base_url, zdr, data_collection (provider-level), models{model_id: prices}. routes.<slug>: (provider, model) pairs that serve a canonical routable slug, each with optional request_defaults: body fields added to a routed request when the caller leaves them unset. Prices are synced to the authoritative llm_config and take precedence over the remote price feed, which only fills in models absent here. base_url must compose with the forwarded path: OpenAI-compatible providers stop before /v1, which the gateway adds. zdr/data_collection are conservative (false/allow) until curated.",
+  "_comment": "Single source of truth for model prices, routing endpoints, and provider data posture. providers.<p>: base_url, zdr, data_collection (provider-level), models{model_id: prices, plus optional long_context{threshold_tokens, input/output/cached prices} billed for every token of a request whose prompt exceeds threshold_tokens; cached defaults to scaling with input}. routes.<slug>: (provider, model) pairs that serve a canonical routable slug, each with optional request_defaults: body fields added to a routed request when the caller leaves them unset. Prices are synced to the authoritative llm_config and take precedence over the remote price feed, which only fills in models absent here. base_url must compose with the forwarded path: OpenAI-compatible providers stop before /v1, which the gateway adds. zdr/data_collection are conservative (false/allow) until curated.",
   "providers": {
     "anthropic": {
       "base_url": "https://api.anthropic.com",
@@ -14,7 +14,7 @@
         "claude-sonnet-5-5": {
           "input_price_per_million": 2,
           "output_price_per_million": 10,
-          "cached_price_per_million": 0.2
+          "cached_price_per_million": 0.1
         },
         "claude-fable-5-1": {
           "input_price_per_million": 10,
@@ -24,7 +24,12 @@
         "claude-haiku-5-5": {
           "input_price_per_million": 0.1,
           "output_price_per_million": 0.5,
-          "cached_price_per_million": 0.01
+          "cached_price_per_million": 0.01,
+          "long_context": {
+            "threshold_tokens": 100000,
+            "input_price_per_million": 0.5,
+            "output_price_per_million": 2.5
+          }
         },
         "claude-opus-5": {
           "input_price_per_million": 5,
