@@ -44,6 +44,18 @@ type ModelPricing struct {
 	InputPricePerMillion  float64
 	OutputPricePerMillion float64
 	CachedPricePerMillion float64
+	// LongContext, when set, replaces all three rates for a request whose prompt
+	// (fresh input + cache reads + cache writes) is above its threshold.
+	LongContext *LongContextPricing
+}
+
+// LongContextPricing is the higher rate some models charge for every token of a
+// request whose prompt is longer than ThresholdTokens.
+type LongContextPricing struct {
+	ThresholdTokens       int
+	InputPricePerMillion  float64
+	OutputPricePerMillion float64
+	CachedPricePerMillion float64
 }
 
 type remotePricingResponse struct {
@@ -61,9 +73,19 @@ type remotePriceEntry struct {
 }
 
 type fallbackPriceEntry struct {
-	InputPricePerMillion  float64 `json:"input_price_per_million"`
-	OutputPricePerMillion float64 `json:"output_price_per_million"`
-	CachedPricePerMillion float64 `json:"cached_price_per_million"`
+	InputPricePerMillion  float64           `json:"input_price_per_million"`
+	OutputPricePerMillion float64           `json:"output_price_per_million"`
+	CachedPricePerMillion float64           `json:"cached_price_per_million"`
+	LongContext           *longContextEntry `json:"long_context,omitempty"`
+}
+
+// longContextEntry is a catalog model's optional higher rate above a prompt
+// length. cached_price_per_million may be omitted: it then scales with input.
+type longContextEntry struct {
+	ThresholdTokens       int      `json:"threshold_tokens"`
+	InputPricePerMillion  float64  `json:"input_price_per_million"`
+	OutputPricePerMillion float64  `json:"output_price_per_million"`
+	CachedPricePerMillion *float64 `json:"cached_price_per_million"`
 }
 
 // Endpoint is one provider that can serve a canonical routing slug, with the
@@ -398,11 +420,26 @@ func parseCatalog(data []byte) (map[string]ModelPricing, map[string]map[string]M
 }
 
 func (e fallbackPriceEntry) toModelPricing() ModelPricing {
-	return ModelPricing{
+	mp := ModelPricing{
 		InputPricePerMillion:  e.InputPricePerMillion,
 		OutputPricePerMillion: e.OutputPricePerMillion,
 		CachedPricePerMillion: e.CachedPricePerMillion,
 	}
+	if lc := e.LongContext; lc != nil && lc.ThresholdTokens > 0 {
+		cached := e.CachedPricePerMillion
+		if lc.CachedPricePerMillion != nil {
+			cached = *lc.CachedPricePerMillion
+		} else if e.InputPricePerMillion > 0 {
+			cached = e.CachedPricePerMillion * lc.InputPricePerMillion / e.InputPricePerMillion
+		}
+		mp.LongContext = &LongContextPricing{
+			ThresholdTokens:       lc.ThresholdTokens,
+			InputPricePerMillion:  lc.InputPricePerMillion,
+			OutputPricePerMillion: lc.OutputPricePerMillion,
+			CachedPricePerMillion: cached,
+		}
+	}
+	return mp
 }
 
 func (s *Service) refreshLoop() {
@@ -503,6 +540,16 @@ func (s *Service) Calculate(metrics *models.UsageMetrics) models.Cost {
 	// cache-creation total without the per-TTL breakdown, attribute the whole
 	// amount to the 5-minute bucket (the default TTL) so those tokens are still
 	// priced rather than silently dropped from the input bucket at zero cost.
+	// A prompt above a model's long-context threshold is billed entirely at the
+	// long-context rates. InputTokens is the whole prompt (see below).
+	if lc := pricing.LongContext; lc != nil && max(metrics.InputTokens, metrics.PromptTokens) > lc.ThresholdTokens {
+		pricing = ModelPricing{
+			InputPricePerMillion:  lc.InputPricePerMillion,
+			OutputPricePerMillion: lc.OutputPricePerMillion,
+			CachedPricePerMillion: lc.CachedPricePerMillion,
+		}
+	}
+
 	create5m := metrics.CacheCreation5mTokens
 	create1h := metrics.CacheCreation1hTokens
 	if create5m+create1h == 0 && metrics.CacheCreationTokens > 0 {

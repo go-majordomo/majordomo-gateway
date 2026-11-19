@@ -74,6 +74,11 @@ type UsageMetrics struct {
 	CacheCreation5mTokens int
 	CacheCreation1hTokens int
 	ResponseTime          time.Duration
+	// PromptTokens, when set, is the size of the whole prompt these tokens are
+	// part of. It selects the price tier when pricing a slice of a larger
+	// request (one tool result, one MCP server's definitions); left at zero, the
+	// tier follows InputTokens.
+	PromptTokens int
 }
 
 type Cost struct {
