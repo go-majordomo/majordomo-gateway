@@ -53,6 +53,16 @@
       "zdr": false,
       "data_collection": "allow",
       "models": {
+        "gpt-6.2-astra": {
+          "input_price_per_million": 8,
+          "output_price_per_million": 40,
+          "cached_price_per_million": 0.4
+        },
+        "gpt-6.2-sol": {
+          "input_price_per_million": 2,
+          "output_price_per_million": 10,
+          "cached_price_per_million": 0.1
+        },
         "gpt-6-astra": {
           "input_price_per_million": 10,
           "output_price_per_million": 50,
