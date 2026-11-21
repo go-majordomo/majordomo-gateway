@@ -49,6 +49,27 @@ OPENAI_API_KEY=sk-...
 GEMINI_API_KEY=...
 ```
 
+## Agents tested on a Claude subscription
+
+When the user builds or tests agents inside Claude Code (interactively, `claude -p`,
+or the Claude Agent SDK) on a Claude subscription, their calls never reach the gateway.
+With the open-source gateway, `gateway-cli claude-code` covers that case from Claude
+Code's local transcripts, priced at API rates:
+
+- `gateway-cli claude-code explain [--mcp-config .mcp.json]` — where each message's cost
+  went (output, each tool/MCP call, MCP tool definitions, subagents, history). Local only.
+- `gateway-cli claude-code compare <before> <after>` — what a change (feature, MCP
+  server, prompt) added per run, component by component. Local only.
+- `gateway-cli claude-code mcp-overhead --mcp-config .mcp.json` — tokens each MCP
+  server's tool definitions add to every request.
+- `gateway-cli claude-code import [--meta team=...]` with `MAJORDOMO_API_KEY` set —
+  stores sessions as runs (`claude-code:<key-id>:<session-id>`) with per-tool spans, visible in
+  `gateway-cli usage run` and the MCP `get_run_tree` tool.
+
+With `gateway-mcp` registered in Claude Code, the same is available as MCP tools
+(`claude_code_explain` — current session by default — `claude_code_compare`,
+`claude_code_import`), so the user can simply ask Claude what a session or a feature cost.
+
 ## Step 3 — Connect a client
 
 The gateway speaks the providers' own wire formats. Change the base URL, add the

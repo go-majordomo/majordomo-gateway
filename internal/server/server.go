@@ -31,7 +31,8 @@ type Server struct {
 // New builds and returns a fully configured Server. It wires the proxy handler as a
 // catch-all at "/*" and exposes health/readiness probes. The admin/query API
 // (/api/v1/keys, /api/v1/usage/*) is mounted, behind bearer-token auth, only when an
-// admin token is configured.
+// admin token is configured. The usage-import API (/v1/claude-code/import) is always
+// mounted; it authenticates with the caller's gateway API key, like the proxy.
 func New(
 	cfg *config.ServerConfig,
 	proxyHandler *proxy.Handler,
@@ -41,6 +42,7 @@ func New(
 	usage *controllers.UsageController,
 	metadata *controllers.MetadataController,
 	providerKeys *controllers.ProviderKeysController,
+	imports *controllers.ImportController,
 ) *Server {
 	s := &Server{
 		config:        cfg,
@@ -70,6 +72,12 @@ func New(
 			}
 		})
 		slog.Info("admin/query API enabled at /api/v1")
+	}
+
+	// Usage import — e.g. Claude Code sessions run on a subscription. Registered
+	// before the catch-all so it is not mistaken for a provider path.
+	if imports != nil {
+		imports.RegisterRoutes(router)
 	}
 
 	// Catch-all: forward every other request to the LLM proxy.

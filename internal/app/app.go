@@ -147,17 +147,19 @@ func Build(ctx context.Context, cfg *config.Config) (*Server, error) {
 	keyService := services.NewKeyService(apiKeyRepo)
 	usageService := services.NewUsageService(usageRepo, bodyStore)
 	metadataService := services.NewMetadataService(metadataKeyRepo)
+	importService := services.NewImportService(repositories.NewImportRepository(db, activeKeyCache, hllManager), pricingSvc)
 
 	// ── Controllers (admin/query API) ─────────────────────────────────────────
 	keysController := controllers.NewKeysController(keyService)
 	usageController := controllers.NewUsageController(usageService)
 	metadataController := controllers.NewMetadataController(metadataService)
+	importController := controllers.NewImportController(importService, resolver)
 	if cfg.Admin.Token == "" {
 		slog.Warn("ADMIN_TOKEN not set — key management and usage query API are disabled; proxy traffic only")
 	}
 
 	// ── HTTP Server ───────────────────────────────────────────────────────────
-	srv := server.New(&cfg.Server, proxyHandler, logWriter, cfg.Admin.Token, keysController, usageController, metadataController, providerKeysController)
+	srv := server.New(&cfg.Server, proxyHandler, logWriter, cfg.Admin.Token, keysController, usageController, metadataController, providerKeysController, importController)
 
 	return &Server{
 		inner:     srv,
