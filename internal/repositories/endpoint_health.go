@@ -34,7 +34,7 @@ func (r *EndpointHealthRepository) GetEndpointHealth(ctx context.Context, since 
 			coalesce(avg(response_time_ms), 0)                           AS avg_latency_ms,
 			count(*) FILTER (WHERE status_code >= 500)::float8 / count(*) AS error_rate
 		FROM llm_requests
-		WHERE requested_at > $1
+		WHERE requested_at > $1 AND request_method <> 'IMPORT'
 		GROUP BY provider, model`
 
 	var health []models.EndpointHealth

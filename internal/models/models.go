@@ -79,6 +79,8 @@ type UsageMetrics struct {
 	// request (one tool result, one MCP server's definitions); left at zero, the
 	// tier follows InputTokens.
 	PromptTokens int
+	// BaseTier selects base pricing for a slice whose whole prompt size is unknown.
+	BaseTier bool
 }
 
 type Cost struct {

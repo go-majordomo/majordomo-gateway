@@ -542,7 +542,7 @@ func (s *Service) Calculate(metrics *models.UsageMetrics) models.Cost {
 	// priced rather than silently dropped from the input bucket at zero cost.
 	// A prompt above a model's long-context threshold is billed entirely at the
 	// long-context rates. InputTokens is the whole prompt (see below).
-	if lc := pricing.LongContext; lc != nil && max(metrics.InputTokens, metrics.PromptTokens) > lc.ThresholdTokens {
+	if lc := pricing.LongContext; lc != nil && !metrics.BaseTier && max(metrics.InputTokens, metrics.PromptTokens) > lc.ThresholdTokens {
 		pricing = ModelPricing{
 			InputPricePerMillion:  lc.InputPricePerMillion,
 			OutputPricePerMillion: lc.OutputPricePerMillion,
