@@ -173,6 +173,7 @@ const (
 	RunNodeKindRun  = "run"  // the synthetic root of a run
 	RunNodeKindStep = "step" // a tool/agent step (no row of its own in Tier 1)
 	RunNodeKindLLM  = "llm"  // a proxied LLM call
+	RunNodeKindTool = "tool" // a tool call (Tier 2); its cost is attributed, not added
 )
 
 // RunNode is one node of the run waterfall. Interior ("run"/"step") nodes carry only
@@ -193,6 +194,13 @@ type RunNode struct {
 	ResponseTimeMs *int64     `json:"response_time_ms,omitempty"`
 	StatusCode     *int       `json:"status_code,omitempty"`
 
+	// Tool-only fields (Tier 2). A tool call's AttributedCost is the share of its
+	// parent's LLM cost spent carrying its result (first write plus cache re-reads);
+	// it is already counted in TotalCost above it, so it is not rolled up again.
+	ResultTokens   *int    `json:"result_tokens,omitempty"`
+	RereadCount    *int    `json:"reread_count,omitempty"`
+	AttributedCost float64 `json:"attributed_cost,omitempty"`
+
 	SelfCost     float64    `json:"self_cost"`     // this node's own cost (0 for interior nodes)
 	TotalCost    float64    `json:"total_cost"`    // rolled up over the subtree
 	RequestCount int64      `json:"request_count"` // llm leaves in the subtree
@@ -208,6 +216,8 @@ type RunTree struct {
 	StartedAt    time.Time `json:"started_at"`
 	EndedAt      time.Time `json:"ended_at"`
 	Truncated    bool      `json:"truncated"` // true if the run exceeded the fetch cap
+	// ToolCost is the part of TotalCost attributed to tool results (Tier 2 spans).
+	ToolCost float64 `json:"tool_cost,omitempty"`
 }
 
 // UsageQueryFilter is a single key=value filter on request metadata.

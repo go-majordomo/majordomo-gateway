@@ -204,6 +204,76 @@ last week?"* or *"show me the most expensive agent run yesterday."* The server e
 `usage_by_metadata`, `list_requests`, `get_request`, `error_summary`,
 `recent_errors`, `latency_stats`, `list_runs`, and `get_run_tree`.
 
+## Claude Code sessions and MCP cost
+
+Agents you build and test inside Claude Code — interactively, with `claude -p`, or
+with the Claude Agent SDK — can run on a Claude subscription, where nothing passes
+through the gateway. `gateway-cli claude-code` reads the transcripts Claude Code
+already keeps (`~/.claude/projects`) and prices them at API rates with the same
+catalog as the gateway, so you see what those agents would cost on the API.
+Prompts, responses and tool content never leave your machine.
+
+```bash
+# Where did each message's cost go? (local only)
+gateway-cli claude-code explain                       # most recent session in this directory
+gateway-cli claude-code explain --mcp-config .mcp.json --calls
+
+# What did a change cost? Compare a run before and after it (local only)
+gateway-cli claude-code compare <before session id> <after session id>
+
+# How many tokens does each MCP server's tool list add to every request? (local only)
+gateway-cli claude-code mcp-overhead --mcp-config .mcp.json
+
+# Import sessions as agent runs (authenticates with a gateway API key, like the proxy)
+export MAJORDOMO_API_KEY=mdm_sk_...
+gateway-cli claude-code import --meta team=growth     # sessions started in this directory
+gateway-cli claude-code import --watch 30s            # keep importing while you work
+gateway-cli usage run <trace-id-from-import>        # the session's cost waterfall
+```
+
+`explain` splits each message's cost into model output, each tool call's result
+(MCP calls included), MCP tool definitions per server (with `--mcp-config`),
+subagents, and the rest of the context. `import` sends only token counts, model and
+tool names, and span structure to `POST /v1/claude-code/import`: each session becomes
+the run `claude-code:<key-id>:<session-id>`, each message a `turn-<n>` step, and each subagent
+an `agent:<type>` step under it. Re-importing a session is safe; only new requests are
+added.
+
+Imported runs also carry **tool spans** (agent-run observability Tier 2, table
+`run_tool_spans`): one per tool call, with the size of its result and how often later
+requests re-read it from the prompt cache. They appear as `tool` lines in
+`gateway-cli usage run` and as `kind: "tool"` nodes in `get_run_tree`. A tool span's
+`attributed_cost` is the part of its step's cost spent carrying that result; it is
+already included in the step's total and is never added to it.
+
+**Ask Claude Code directly.** With `gateway-mcp` registered (see above), Claude can
+answer these questions itself through three more tools that read the local
+transcripts: `claude_code_explain` (the current session by default — Claude Code
+passes its session id to the MCP servers it starts), `claude_code_compare`, and
+`claude_code_import` (needs `--api-key` or `MAJORDOMO_API_KEY`). For example: *"What
+has this conversation cost so far, and where did it go?"* or *"Session a9aedb32 is
+my agent before the feature and 2e802ca7 after it — what does the feature add per
+run?"* `explain` and `compare` work without a running gateway.
+
+`compare` splits the change into non-overlapping components (model output, each
+tool's results, MCP definitions per server, each subagent type, system prompt and
+history) that sum to each total, so a feature's cost shows up as the components it
+moved — e.g. a new tool's results, or more output.
+
+Accuracy, measured against Claude Code's own cost figures: per-message and session
+totals match, except that Claude Code sometimes makes a small side request of its
+own (~1.2k input tokens per session) that it bills but does not write to the
+transcript; it is not part of your agent's work and cancels out in `compare`. Tool result sizes come from how much the context grew when the
+result arrived; they include the ~28 tokens of framing the API bills per tool result.
+When Claude Code adds its own context at the same moment (skill or MCP tool listings,
+hook output), that growth is not the tool's: the result is then sized from its
+characters (2.3 per token, measured on real Claude Code tool results) and the rest
+stays with the context. Prices follow each request's tier: a model with a
+long-context rate (`long_context` in `model_catalog.json`, e.g. Claude Haiku 5.5
+above 100K prompt tokens) bills every part of a large request at that rate.
+The transcript format is Claude Code's internal format (verified with Claude Code
+2.1.x), not a published API.
+
 ## Configuration
 
 | Variable | Required | Description |
