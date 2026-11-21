@@ -43,7 +43,7 @@ func (c *ImportController) RegisterRoutes(r chi.Router) {
 
 // ImportClaudeCode stores one Claude Code session's usage (token counts, model and
 // tool names only) as request-log rows and tool spans in the run
-// "claude-code:<session id>".
+// "claude-code:<key-id>:<session-id>".
 func (c *ImportController) ImportClaudeCode(w http.ResponseWriter, r *http.Request) {
 	key, err := c.keys.ResolveAPIKey(r.Context(), r.Header.Get("X-Majordomo-Key"))
 	if err != nil {
