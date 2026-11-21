@@ -200,9 +200,112 @@ claude mcp add gateway -- gateway-mcp --api-url http://localhost:6560 --token $G
 
 Then ask in natural language — e.g. *"what did the billing-service spend on gpt-5-nano
 last week?"* or *"show me the most expensive agent run yesterday."* The server exposes
-`usage_summary`, `usage_by_model`, `usage_by_provider`, `usage_by_api_key`,
+`usage_summary`, `usage_by_mcp_server`, `usage_by_model`, `usage_by_provider`, `usage_by_api_key`,
 `usage_by_metadata`, `list_requests`, `get_request`, `error_summary`,
 `recent_errors`, `latency_stats`, `list_runs`, and `get_run_tree`.
+
+## Claude Code sessions and MCP cost
+
+Agents you build and test inside Claude Code — interactively, with `claude -p`, or
+with the Claude Agent SDK — can run on a Claude subscription, where nothing passes
+through the gateway. `gateway-cli claude-code` reads the transcripts Claude Code
+already keeps (`~/.claude/projects`) and prices them at API rates with the same
+catalog as the gateway, so you see what those agents would cost on the API.
+Prompts, responses and tool content never leave your machine.
+
+```bash
+# Where did each message's cost go? (local only)
+gateway-cli claude-code explain                       # most recent session in this directory
+gateway-cli claude-code explain --mcp-config .mcp.json --calls
+
+# What did a change cost? Compare a run before and after it (local only)
+gateway-cli claude-code compare <before session id> <after session id>
+
+# How many tokens does each MCP server's tool list add to every request? (local only)
+gateway-cli claude-code mcp-overhead --mcp-config .mcp.json
+
+# Import sessions as agent runs (authenticates with a gateway API key, like the proxy)
+export MAJORDOMO_API_KEY=mdm_sk_...
+gateway-cli claude-code import --meta team=growth     # sessions started in this directory
+gateway-cli claude-code import --watch 30s            # keep importing while you work
+gateway-cli usage run <trace-id-from-import>        # the session's cost waterfall
+```
+
+`explain` splits each message's cost into model output, each tool call's result
+(MCP calls included), MCP tool definitions per server (with `--mcp-config`),
+subagents, and the rest of the context. `import` sends only token counts, model and
+tool names, and span structure to `POST /v1/claude-code/import`: each session becomes
+the run `claude-code:<key-id>:<session-id>`, each message a `turn-<n>` step, and each subagent
+an `agent:<type>` step under it. Re-importing a session is safe; only new requests are
+added.
+
+Imported runs also carry **tool spans** (agent-run observability Tier 2, table
+`run_tool_spans`): one per tool call, with the size of its result and how often later
+requests re-read it from the prompt cache. They appear as `tool` lines in
+`gateway-cli usage run` and as `kind: "tool"` nodes in `get_run_tree`. A tool span's
+`attributed_cost` is the part of its step's cost spent carrying that result; it is
+already included in the step's total and is never added to it.
+
+**Ask Claude Code directly.** With `gateway-mcp` registered (see above), Claude can
+answer these questions itself through three more tools that read the local
+transcripts: `claude_code_explain` (the current session by default — Claude Code
+passes its session id to the MCP servers it starts), `claude_code_compare`, and
+`claude_code_import` (needs `--api-key` or `MAJORDOMO_API_KEY`). For example: *"What
+has this conversation cost so far, and where did it go?"* or *"Session a9aedb32 is
+my agent before the feature and 2e802ca7 after it — what does the feature add per
+run?"* `explain` and `compare` work without a running gateway.
+
+`compare` splits the change into non-overlapping components (model output, each
+tool's results, MCP definitions per server, each subagent type, system prompt and
+history) that sum to each total, so a feature's cost shows up as the components it
+moved — e.g. a new tool's results, or more output.
+
+Accuracy, measured against Claude Code's own cost figures: per-message and session
+totals match, except that Claude Code sometimes makes a small side request of its
+own (~1.2k input tokens per session) that it bills but does not write to the
+transcript; it is not part of your agent's work and cancels out in `compare`. Tool result sizes come from how much the context grew when the
+result arrived; they include the ~28 tokens of framing the API bills per tool result.
+When Claude Code adds its own context at the same moment (skill or MCP tool listings,
+hook output), that growth is not the tool's: the result is then sized from its
+characters (2.3 per token, measured on real Claude Code tool results) and the rest
+stays with the context. Prices follow each request's tier: a model with a
+long-context rate (`long_context` in `model_catalog.json`, e.g. Claude Haiku 5.5
+above 100K prompt tokens) bills every part of a large request at that rate.
+The transcript format is Claude Code's internal format (verified with Claude Code
+2.1.x), not a published API.
+
+## Codex and Cursor session costs
+
+Use `gateway-cli codex` or `gateway-cli cursor` to explain a session, compare two runs, measure MCP definition overhead, or import usage into the gateway. By default the CLI selects sessions in the current project. An explicit session ID or unique prefix searches across projects.
+
+```bash
+gateway-cli codex explain --calls
+gateway-cli cursor explain --session <id> --json
+gateway-cli codex compare <before-id> <after-id>
+gateway-cli cursor import --session <id> --dry-run
+gateway-cli cursor import --watch 30s --meta team=growth
+gateway-cli usage run <trace-id-from-import>
+```
+
+After importing sessions, run `gateway-cli usage mcp --preset 7d` or call `usage_by_mcp_server` to rank servers by estimated tool-result cost. The report counts each call once and includes the cost of carrying its result on later requests. The time, provider and model filters apply to the request that first carried the result. The estimated-usage column counts calls from sessions with reconstructed counters. Use the client’s `mcp-overhead` command for schema cost.
+
+Codex reads rollouts under `$CODEX_HOME/sessions` (including compressed `.jsonl.zst` files). It prices each response once using the model, total input, cached input and output counters. Cursor reads the desktop composer database and local CLI chat stores. Desktop reports use the available bubble counters. When counters are empty, the report estimates visible input and output at four bytes per token and assumes uncached input. CLI reports use each available message timestamp. Missing times use the session start and set `estimated_time` in the report and `time_basis=session_start` on import. CLI estimates cover the ordered messages retained in the current conversation snapshot and use the last selected model. Compacted history, hidden context, model changes and provider-side caching can change the actual cost. Estimated imports carry `usage_basis=estimated`. Use `--store` for an alternate rollout directory, Cursor desktop `state.vscdb`, or Cursor CLI `chats` directory.
+
+Tool-result costs estimate the share of input occupied by each returned result and its later appearances until compaction or a drop in context size. Reports use each consuming model’s price and the result’s estimated position within the recorded cache prefix. Wrapped tools appear under the wrapper name when the client only records that name. Parent and child sessions are grouped when the client records their relationship. Unknown model prices appear in `unpriced_models` and contribute zero dollars. Dollar figures use the gateway catalog’s API rates. Input cache writes without TTL pricing are valued as regular input. Subscription credits, priority tiers, and fees charged directly by tools require separate billing data. The bundled GPT-6.2 prices use the standard API rates. [OpenAI pricing](https://developers.openai.com/api/docs/pricing)
+
+### MCP definition overhead
+
+Without a config, `mcp-overhead` uses the last request’s recorded definitions or Cursor’s latest aggregate MCP snapshot. For an inventory, pass a trusted client config. The CLI connects to its configured servers, calls MCP `tools/list`, and projects cached and uncached prices for the serialized schemas. For a measured context delta, add `--probe`. This runs a short model call with no configured servers, one per server, and one with all servers when needed. It uses isolated client configuration and requires working CLI authentication. The Cursor probe also needs a client that returns input usage or records a context count.
+
+```bash
+gateway-cli cursor mcp-overhead --mcp-config ~/.cursor/mcp.json --model gpt-5 --requests 1000
+gateway-cli codex mcp-overhead --probe --mcp-config ~/.codex/config.toml --model gpt-6.2-sol > probe.json
+gateway-cli codex explain --session <id> --mcp-measurement probe.json
+```
+
+The inventory assumes the full catalog is loaded. Live probes capture the client’s initial exposure, which can be smaller with deferred tools. Small deltas can vary between runs. Applying a saved probe uses its combined delta for matching-model requests and splits that total across servers in proportion to their measured individual deltas.
+
+With `gateway-mcp` registered, use `codex_explain`, `codex_compare`, `codex_import`, `cursor_explain`, `cursor_compare`, or `cursor_import`. The explain and import MCP tools require an explicit `session_id` or unique prefix; they never select the latest session or infer one from `CODEX_THREAD_ID`. Imports authenticate with `MAJORDOMO_API_KEY` and post counts, model and tool names, IDs, timestamps, tags and span paths to `/v1/codex/import` or `/v1/cursor/import`. Re-importing a session reuses its request IDs and updates tool spans as more results are carried forward.
 
 ## Configuration
 

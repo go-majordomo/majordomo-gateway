@@ -8,6 +8,8 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
+
+	"github.com/go-majordomo/majordomo-gateway/internal/models"
 )
 
 // metadataFlag collects repeatable --metadata key=value pairs.
@@ -77,7 +79,7 @@ func parseUsageFlags(name string, args []string) (*usageFlags, error) {
 
 func runUsage(c *client, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: gateway-cli usage <summary|models|providers|keys|errors|latency|requests|runs|run>")
+		return fmt.Errorf("usage: gateway-cli usage <summary|mcp|models|providers|keys|errors|latency|requests|runs|run>")
 	}
 	sub := args[0]
 	rest := args[1:]
@@ -112,6 +114,8 @@ func runUsage(c *client, args []string) error {
 	}
 
 	switch sub {
+	case "mcp":
+		return usageMCP(c, uf)
 	case "summary":
 		return usageSummary(c, uf)
 	case "models":
@@ -284,12 +288,15 @@ func usageRuns(c *client, uf *usageFlags) error {
 
 // runNode mirrors models.RunNode for rendering the waterfall.
 type runNode struct {
-	Name         string     `json:"name"`
-	Kind         string     `json:"kind"`
-	Model        *string    `json:"model,omitempty"`
-	TotalCost    float64    `json:"total_cost"`
-	RequestCount int64      `json:"request_count"`
-	Children     []*runNode `json:"children"`
+	Name           string     `json:"name"`
+	Kind           string     `json:"kind"`
+	Model          *string    `json:"model,omitempty"`
+	TotalCost      float64    `json:"total_cost"`
+	RequestCount   int64      `json:"request_count"`
+	ResultTokens   *int       `json:"result_tokens,omitempty"`
+	RereadCount    *int       `json:"reread_count,omitempty"`
+	AttributedCost float64    `json:"attributed_cost,omitempty"`
+	Children       []*runNode `json:"children"`
 }
 
 func runUsageRunTree(c *client, traceID string, asJSON bool) error {
@@ -298,6 +305,7 @@ func runUsageRunTree(c *client, traceID string, asJSON bool) error {
 		Root         *runNode `json:"root"`
 		TotalCost    float64  `json:"total_cost"`
 		RequestCount int64    `json:"request_count"`
+		ToolCost     float64  `json:"tool_cost"`
 	}
 	if err := c.get("/api/v1/usage/runs/"+traceID, &tree); err != nil {
 		return err
@@ -309,11 +317,25 @@ func runUsageRunTree(c *client, traceID string, asJSON bool) error {
 	if tree.Root != nil {
 		printRunNode(tree.Root, 0)
 	}
+	if tree.ToolCost > 0 {
+		fmt.Printf("\nTool results account for $%.4f of the total (tool lines are included in the cost above them).\n", tree.ToolCost)
+	}
 	return nil
 }
 
 func printRunNode(n *runNode, depth int) {
 	indent := strings.Repeat("  ", depth)
+	if n.Kind == "tool" {
+		label := "tool " + n.Name
+		if n.ResultTokens != nil {
+			label += fmt.Sprintf(" %d tok", *n.ResultTokens)
+		}
+		if n.RereadCount != nil && *n.RereadCount > 0 {
+			label += fmt.Sprintf(" +%d re-reads", *n.RereadCount)
+		}
+		fmt.Printf("%s%-40s ($%.4f)\n", indent, truncate(label, 40), n.AttributedCost)
+		return
+	}
 	label := n.Name
 	if n.Kind == "llm" && n.Model != nil {
 		label = fmt.Sprintf("%s (%s)", n.Name, *n.Model)
@@ -352,4 +374,25 @@ func contains(args []string, flag string) bool {
 		}
 	}
 	return false
+}
+
+func usageMCP(c *client, uf *usageFlags) error {
+	var report []models.MCPServerUsage
+	if err := c.post("/api/v1/usage/mcp", uf.body, &report); err != nil {
+		return err
+	}
+	if uf.json {
+		return printJSON(report)
+	}
+	fmt.Println("Attributed cost is included in session totals. Use mcp-overhead for tool-definition costs.")
+	w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
+	if _, err := fmt.Fprintln(w, "MCP SERVER\tCALLS\tRESULT TOKENS\tREREADS\tEST. USAGE CALLS\tATTRIBUTED COST"); err != nil {
+		return err
+	}
+	for _, r := range report {
+		if _, err := fmt.Fprintf(w, "%s\t%d\t%d\t%d\t%d\t$%.6f\n", r.Server, r.Calls, r.ResultTokens, r.Rereads, r.EstimatedUsageCalls, r.AttributedCost); err != nil {
+			return err
+		}
+	}
+	return w.Flush()
 }
