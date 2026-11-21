@@ -137,3 +137,36 @@ func TestAssembleRunTreeCanonicalizesPaths(t *testing.T) {
 		t.Errorf("tool children = %d, want 2 (both leaves under one canonical node)", len(tool.Children))
 	}
 }
+
+// Tool spans (Tier 2) attach under their step and report an attributed cost
+// that is not rolled up again.
+func TestAttachToolSpans(t *testing.T) {
+	base := time.Date(2026, 11, 17, 10, 0, 0, 0, time.UTC)
+	rows := []runLeafRow{
+		leaf("claude-code/turn-1", "claude-haiku-5-5", 0.05, base),
+		leaf("claude-code/turn-2", "claude-haiku-5-5", 0.01, base.Add(time.Minute)),
+	}
+	tree := assembleRunTree("claude-code:S", rows, false)
+	attachToolSpans(tree, []toolSpanRow{
+		{SpanPath: "claude-code/turn-1", ToolName: "mcp__crm__get_leads", ResultTokens: 900, RereadCount: 3, AttributedCost: 0.02},
+		{SpanPath: "claude-code/gone", ToolName: "Read", AttributedCost: 0.001},
+	})
+
+	if !approx(tree.TotalCost, 0.06) {
+		t.Errorf("total_cost = %v, want 0.06 (tool costs are not added)", tree.TotalCost)
+	}
+	if !approx(tree.ToolCost, 0.021) {
+		t.Errorf("tool_cost = %v, want 0.021", tree.ToolCost)
+	}
+	turn1 := findChild(findChild(tree.Root, "claude-code"), "turn-1")
+	tool := findChild(turn1, "mcp__crm__get_leads")
+	if tool == nil || tool.Kind != models.RunNodeKindTool || !approx(tool.AttributedCost, 0.02) || tool.TotalCost != 0 {
+		t.Fatalf("tool node = %+v", tool)
+	}
+	if !approx(turn1.TotalCost, 0.05) {
+		t.Errorf("turn-1 total = %v, want 0.05", turn1.TotalCost)
+	}
+	if findChild(tree.Root, "Read") == nil {
+		t.Error("a tool whose step is missing should hang under the root")
+	}
+}
