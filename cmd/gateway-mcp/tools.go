@@ -64,6 +64,7 @@ func registerTools(s *mcp.Server, c *client) {
 	}
 
 	post("usage_summary", "Total requests, tokens, and cost over a time window.", "/api/v1/usage/summary")
+	post("usage_by_mcp_server", "Group imported MCP calls by server, including result tokens, rereads, attributed cost and estimated-usage calls. Attributed cost is already included in session totals. Use mcp-overhead for schema costs. Time, model and provider filters select calls by their first carrying request.", "/api/v1/usage/mcp")
 	post("usage_by_model", "Cost and token usage broken down by provider and model.", "/api/v1/usage/models")
 	post("usage_by_provider", "Cost and token usage broken down by provider.", "/api/v1/usage/providers")
 	post("usage_by_api_key", "Cost and token usage broken down by gateway API key.", "/api/v1/usage/api-keys")

@@ -200,7 +200,7 @@ claude mcp add gateway -- gateway-mcp --api-url http://localhost:6560 --token $G
 
 Then ask in natural language — e.g. *"what did the billing-service spend on gpt-5-nano
 last week?"* or *"show me the most expensive agent run yesterday."* The server exposes
-`usage_summary`, `usage_by_model`, `usage_by_provider`, `usage_by_api_key`,
+`usage_summary`, `usage_by_mcp_server`, `usage_by_model`, `usage_by_provider`, `usage_by_api_key`,
 `usage_by_metadata`, `list_requests`, `get_request`, `error_summary`,
 `recent_errors`, `latency_stats`, `list_runs`, and `get_run_tree`.
 
@@ -286,6 +286,8 @@ gateway-cli cursor import --session <id> --dry-run
 gateway-cli cursor import --watch 30s --meta team=growth
 gateway-cli usage run <trace-id-from-import>
 ```
+
+After importing sessions, run `gateway-cli usage mcp --preset 7d` or call `usage_by_mcp_server` to rank servers by estimated tool-result cost. The report counts each call once and includes the cost of carrying its result on later requests. The time, provider and model filters apply to the request that first carried the result. The estimated-usage column counts calls from sessions with reconstructed counters. Use the client’s `mcp-overhead` command for schema cost.
 
 Codex reads rollouts under `$CODEX_HOME/sessions` (including compressed `.jsonl.zst` files). It prices each response once using the model, total input, cached input and output counters. Cursor reads the desktop composer database and local CLI chat stores. Desktop reports use the available bubble counters. When counters are empty, the report estimates visible input and output at four bytes per token and assumes uncached input. CLI reports use each available message timestamp. Missing times use the session start and set `estimated_time` in the report and `time_basis=session_start` on import. CLI estimates cover the ordered messages retained in the current conversation snapshot and use the last selected model. Compacted history, hidden context, model changes and provider-side caching can change the actual cost. Estimated imports carry `usage_basis=estimated`. Use `--store` for an alternate rollout directory, Cursor desktop `state.vscdb`, or Cursor CLI `chats` directory.
 

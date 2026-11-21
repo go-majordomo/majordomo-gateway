@@ -8,6 +8,8 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
+
+	"github.com/go-majordomo/majordomo-gateway/internal/models"
 )
 
 // metadataFlag collects repeatable --metadata key=value pairs.
@@ -77,7 +79,7 @@ func parseUsageFlags(name string, args []string) (*usageFlags, error) {
 
 func runUsage(c *client, args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: gateway-cli usage <summary|models|providers|keys|errors|latency|requests|runs|run>")
+		return fmt.Errorf("usage: gateway-cli usage <summary|mcp|models|providers|keys|errors|latency|requests|runs|run>")
 	}
 	sub := args[0]
 	rest := args[1:]
@@ -112,6 +114,8 @@ func runUsage(c *client, args []string) error {
 	}
 
 	switch sub {
+	case "mcp":
+		return usageMCP(c, uf)
 	case "summary":
 		return usageSummary(c, uf)
 	case "models":
@@ -370,4 +374,25 @@ func contains(args []string, flag string) bool {
 		}
 	}
 	return false
+}
+
+func usageMCP(c *client, uf *usageFlags) error {
+	var report []models.MCPServerUsage
+	if err := c.post("/api/v1/usage/mcp", uf.body, &report); err != nil {
+		return err
+	}
+	if uf.json {
+		return printJSON(report)
+	}
+	fmt.Println("Attributed cost is included in session totals. Use mcp-overhead for tool-definition costs.")
+	w := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
+	if _, err := fmt.Fprintln(w, "MCP SERVER\tCALLS\tRESULT TOKENS\tREREADS\tEST. USAGE CALLS\tATTRIBUTED COST"); err != nil {
+		return err
+	}
+	for _, r := range report {
+		if _, err := fmt.Fprintf(w, "%s\t%d\t%d\t%d\t%d\t$%.6f\n", r.Server, r.Calls, r.ResultTokens, r.Rereads, r.EstimatedUsageCalls, r.AttributedCost); err != nil {
+			return err
+		}
+	}
+	return w.Flush()
 }

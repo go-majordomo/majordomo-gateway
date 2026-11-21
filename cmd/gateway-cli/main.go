@@ -90,6 +90,7 @@ Commands:
   metadata deactivate --api-key <id> <key>           Stop indexing a metadata key
 
   usage summary      Total requests / tokens / cost
+  usage mcp          Imported tool-result costs by MCP server
   usage models       Cost broken down by provider+model
   usage providers    Cost broken down by provider
   usage keys         Cost broken down by API key

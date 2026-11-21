@@ -42,6 +42,14 @@ func (s *UsageService) DailyUsage(ctx context.Context, q models.UsageQuery) ([]*
 	return s.usage.GetDailyUsage(ctx, filter)
 }
 
+func (s *UsageService) MCPServerUsage(ctx context.Context, q models.UsageQuery) ([]models.MCPServerUsage, error) {
+	filter, err := resolveFilter(q)
+	if err != nil {
+		return nil, err
+	}
+	return s.usage.GetMCPServerUsage(ctx, filter)
+}
+
 func (s *UsageService) ModelBreakdown(ctx context.Context, q models.UsageQuery) ([]*models.ModelUsage, error) {
 	filter, err := resolveFilter(q)
 	if err != nil {

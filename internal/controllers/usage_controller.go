@@ -29,6 +29,7 @@ func NewUsageController(svc *services.UsageService) *UsageController {
 func (c *UsageController) RegisterRoutes(r chi.Router) {
 	r.Post("/usage/summary", c.GetSummary)
 	r.Post("/usage/daily", c.GetDailyUsage)
+	r.Post("/usage/mcp", c.GetMCPServerUsage)
 	r.Post("/usage/models", c.GetModelBreakdown)
 	r.Post("/usage/providers", c.GetProviderBreakdown)
 	r.Post("/usage/api-keys", c.GetAPIKeyBreakdown)
@@ -69,6 +70,20 @@ func (c *UsageController) GetDailyUsage(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	httputil.WriteJSON(w, http.StatusOK, daily)
+}
+
+func (c *UsageController) GetMCPServerUsage(w http.ResponseWriter, r *http.Request) {
+	q, err := decodeUsageQuery(r)
+	if err != nil {
+		httputil.WriteJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	breakdown, err := c.svc.MCPServerUsage(r.Context(), q)
+	if err != nil {
+		c.writeErr(w, err, "get MCP server usage")
+		return
+	}
+	httputil.WriteJSON(w, http.StatusOK, breakdown)
 }
 
 func (c *UsageController) GetModelBreakdown(w http.ResponseWriter, r *http.Request) {

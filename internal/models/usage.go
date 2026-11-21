@@ -244,3 +244,13 @@ type UsageQuery struct {
 	Limit           int
 	Offset          int
 }
+
+// MCPServerUsage aggregates the estimated result footprint of imported calls.
+type MCPServerUsage struct {
+	Server              string  `db:"mcp_server" json:"mcp_server"`
+	Calls               int64   `db:"calls" json:"calls"`
+	ResultTokens        int64   `db:"result_tokens" json:"result_tokens"`
+	Rereads             int64   `db:"rereads" json:"rereads"`
+	EstimatedUsageCalls int64   `db:"estimated_usage_calls" json:"estimated_usage_calls"`
+	AttributedCost      float64 `db:"attributed_cost" json:"attributed_cost"`
+}

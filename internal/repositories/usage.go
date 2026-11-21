@@ -65,6 +65,7 @@ func appendMetadataFilters(query string, args []interface{}, filters []MetadataF
 
 // UsageStorage is the interface satisfied by UsageRepository.
 type UsageStorage interface {
+	GetMCPServerUsage(ctx context.Context, filter *UsageFilter) ([]models.MCPServerUsage, error)
 	GetUsageSummary(ctx context.Context, filter *UsageFilter) (*models.UsageSummary, error)
 	GetDailyUsage(ctx context.Context, filter *UsageFilter) ([]*models.DailyUsage, error)
 	GetModelBreakdown(ctx context.Context, filter *UsageFilter) ([]*models.ModelUsage, error)
