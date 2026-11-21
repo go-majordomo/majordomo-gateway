@@ -29,6 +29,10 @@ import (
 // content block, each repeating the request's usage; they are merged into one
 // Request. Token fields are disjoint, as Anthropic reports them.
 type Request struct {
+	Provider    string
+	Reset       bool
+	Definitions map[string]int
+
 	RequestID             string
 	SessionID             string
 	Model                 string
@@ -64,6 +68,11 @@ type Prompt struct {
 
 // Thread is one transcript file: a session's main conversation or one subagent.
 type Thread struct {
+	ParentPath string // nested agent ancestry below its owning turn
+	StepName   string // optional native subagent step name
+	// Placements contains positions measured by an external session reader.
+	Placements []Placement
+
 	AgentID         string // "main" for the main conversation
 	AgentType       string // "main", or the subagent type (e.g. "general-purpose")
 	ParentToolUseID string // subagents: the Agent tool call that launched it

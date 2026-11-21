@@ -90,7 +90,10 @@ func explain(calc Calculator, th *Thread, results []carriedResult, from, to int,
 
 	for j := from; j < to; j++ {
 		r := th.Requests[j]
-		provider := anthropic
+		provider := r.Provider
+		if provider == "" {
+			provider = anthropic
+		}
 		total := calc.Calculate(&models.UsageMetrics{
 			Provider:              provider,
 			Model:                 r.Model,
@@ -137,6 +140,9 @@ func explain(calc Calculator, th *Thread, results []carriedResult, from, to int,
 		// reads cover them first (possibly left by an earlier session with the
 		// same prefix); any remainder was written.
 		requestDefs := defs
+		if r.Definitions != nil {
+			requestDefs = &MCPDefinitions{PerServer: r.Definitions}
+		}
 		if weight := requestDefs.Total(); weight > 0 {
 			slice := models.InputSlice(r.Model, r.Context(), r.CacheReadTokens, r.CacheCreation1hTokens, r.CacheCreation5mTokens, 0, min(weight, defLimit))
 			cost := calc.Calculate(slice.Metrics(provider)).TotalCost

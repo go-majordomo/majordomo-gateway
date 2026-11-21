@@ -38,13 +38,19 @@ func NewImportController(svc *services.ImportService, keys APIKeyResolver) *Impo
 
 // RegisterRoutes mounts the import endpoints onto the given router.
 func (c *ImportController) RegisterRoutes(r chi.Router) {
-	r.Post("/v1/claude-code/import", c.ImportClaudeCode)
+	for _, source := range models.SessionSources() {
+		r.Post("/v1/"+source+"/import", func(w http.ResponseWriter, r *http.Request) { c.importSession(w, r, source) })
+	}
 }
 
 // ImportClaudeCode stores one Claude Code session's usage (token counts, model and
 // tool names only) as request-log rows and tool spans in the run
 // "claude-code:<key-id>:<session-id>".
 func (c *ImportController) ImportClaudeCode(w http.ResponseWriter, r *http.Request) {
+	c.importSession(w, r, "claude-code")
+}
+
+func (c *ImportController) importSession(w http.ResponseWriter, r *http.Request, source string) {
 	key, err := c.keys.ResolveAPIKey(r.Context(), r.Header.Get("X-Majordomo-Key"))
 	if err != nil {
 		httputil.WriteJSONError(w, http.StatusUnauthorized, "unauthorized")
@@ -57,13 +63,13 @@ func (c *ImportController) ImportClaudeCode(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	result, err := c.svc.ImportClaudeCode(r.Context(), key.ID, &imp)
+	result, err := c.svc.ImportSession(r.Context(), key.ID, source, &imp)
 	if err != nil {
 		if errors.Is(err, services.ErrValidation) {
 			httputil.WriteJSONError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		slog.Error("failed to import claude code session", "error", err, "session_id", imp.SessionID)
+		slog.Error("failed to import session", "error", err, "session_id", imp.SessionID)
 		httputil.WriteJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"math"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -17,11 +18,6 @@ const (
 	maxImportRequests  = 20000
 	maxImportToolSpans = 20000
 
-	// claudeCodeTracePrefix namespaces imported sessions' trace ids.
-	claudeCodeTracePrefix = "claude-code:"
-	// claudeCodeRequestPath / claudeCodeRequestMethod mark imported rows in the
-	// request log, which otherwise only holds proxied HTTP requests.
-	claudeCodeRequestPath   = "claude-code/session"
 	claudeCodeRequestMethod = "IMPORT"
 	claudeCodeProvider      = "anthropic"
 )
@@ -54,28 +50,35 @@ func NewImportService(repo repositories.ImportStorage, pricing CostCalculator) *
 // Re-importing a session is safe: requests already stored are skipped and tool
 // spans are updated (their re-read counts grow as the session continues).
 func (s *ImportService) ImportClaudeCode(ctx context.Context, apiKeyID uuid.UUID, imp *models.ClaudeCodeImport) (*models.ClaudeCodeImportResult, error) {
+	return s.ImportSession(ctx, apiKeyID, "claude-code", imp)
+}
+
+func (s *ImportService) ImportSession(ctx context.Context, apiKeyID uuid.UUID, source string, imp *models.ClaudeCodeImport) (*models.ClaudeCodeImportResult, error) {
+	if !slices.Contains(models.SessionSources(), source) {
+		return nil, validationErrorf("unknown session source")
+	}
 	if err := validateClaudeCodeImport(imp); err != nil {
 		return nil, err
 	}
-	traceID := claudeCodeTracePrefix + apiKeyID.String() + ":" + imp.SessionID
-	// Row ids are derived from the importing key as well as the session, so the
-	// same session imported under another key can never touch these rows.
-	identity := apiKeyID.String() + "\x00" + imp.SessionID
+	traceID := source + ":" + apiKeyID.String() + ":" + imp.SessionID
 	metadata := map[string]string{}
 	for k, v := range imp.Metadata {
 		metadata[k] = v
 	}
 
-	metadata["source"] = "claude-code"
+	metadata["source"] = source
 	result := &models.ClaudeCodeImportResult{
 		TraceID:   traceID,
 		Requests:  len(imp.Requests),
 		ToolSpans: len(imp.ToolSpans),
 	}
 
+	// Row ids are derived from the importing key as well as the session, so the
+	// same session imported under another key can never touch these rows.
+	identity := apiKeyID.String() + "\x00" + imp.SessionID
 	logs := make([]*models.RequestLog, 0, len(imp.Requests))
 	for i := range imp.Requests {
-		log := s.requestLog(apiKeyID, traceID, identity, metadata, &imp.Requests[i])
+		log := s.requestLog(apiKeyID, source, traceID, identity, metadata, &imp.Requests[i])
 		if !log.ModelAliasFound {
 			result.Unpriced++
 		}
@@ -85,7 +88,7 @@ func (s *ImportService) ImportClaudeCode(ctx context.Context, apiKeyID uuid.UUID
 
 	spans := make([]*models.ToolSpan, 0, len(imp.ToolSpans))
 	for i := range imp.ToolSpans {
-		span := s.toolSpan(apiKeyID, traceID, identity, &imp.ToolSpans[i])
+		span := s.toolSpan(apiKeyID, source, traceID, identity, &imp.ToolSpans[i])
 		result.ToolCost += span.AttributedCost
 		spans = append(spans, span)
 	}
@@ -98,10 +101,10 @@ func (s *ImportService) ImportClaudeCode(ctx context.Context, apiKeyID uuid.UUID
 	return result, nil
 }
 
-func (s *ImportService) requestLog(apiKeyID uuid.UUID, traceID, identity string, metadata map[string]string, r *models.ClaudeCodeImportRequest) *models.RequestLog {
+func (s *ImportService) requestLog(apiKeyID uuid.UUID, source, traceID, sessionID string, metadata map[string]string, r *models.ClaudeCodeImportRequest) *models.RequestLog {
 	cacheCreation := r.CacheCreation5mTokens + r.CacheCreation1hTokens
 	metrics := &models.UsageMetrics{
-		Provider:              claudeCodeProvider,
+		Provider:              models.SessionProvider(source, r.Model),
 		Model:                 r.Model,
 		InputTokens:           r.InputTokens + r.CacheReadTokens + cacheCreation,
 		OutputTokens:          r.OutputTokens,
@@ -112,7 +115,7 @@ func (s *ImportService) requestLog(apiKeyID uuid.UUID, traceID, identity string,
 	}
 	cost := s.pricing.Calculate(metrics)
 
-	id := uuid.NewSHA1(importNamespace, []byte("claude-code\x00"+identity+"\x00"+r.RequestID))
+	id := uuid.NewSHA1(importNamespace, []byte(source+"\x00"+sessionID+"\x00"+r.RequestID))
 	path := spanid.CanonicalPath(r.SpanPath)
 	parent := spanid.InteriorSpanID(traceID, path)
 	spanName := r.Model
@@ -120,9 +123,9 @@ func (s *ImportService) requestLog(apiKeyID uuid.UUID, traceID, identity string,
 	return &models.RequestLog{
 		ID:                    id,
 		MajordomoAPIKeyID:     &apiKeyID,
-		Provider:              claudeCodeProvider,
+		Provider:              metrics.Provider,
 		Model:                 r.Model,
-		RequestPath:           claudeCodeRequestPath,
+		RequestPath:           source + "/session",
 		RequestMethod:         claudeCodeRequestMethod,
 		RequestedAt:           r.OccurredAt,
 		RespondedAt:           r.OccurredAt,
@@ -149,25 +152,25 @@ func (s *ImportService) requestLog(apiKeyID uuid.UUID, traceID, identity string,
 }
 
 // toolSpan prices each carrying request independently.
-func (s *ImportService) toolSpan(apiKeyID uuid.UUID, traceID, identity string, t *models.ClaudeCodeImportToolSpan) *models.ToolSpan {
+func (s *ImportService) toolSpan(apiKeyID uuid.UUID, source, traceID, sessionID string, t *models.ClaudeCodeImportToolSpan) *models.ToolSpan {
 	var cost float64
 	var rereads int
 	for i, c := range t.Charges {
-		cost += s.pricing.Calculate(c.Metrics(claudeCodeProvider)).TotalCost
+		cost += s.pricing.Calculate(c.Metrics(models.SessionProvider(source, c.Model))).TotalCost
 		if i > 0 && c.Input > 0 {
 			rereads++
 		}
 	}
 	path := spanid.CanonicalPath(t.SpanPath)
 	return &models.ToolSpan{
-		ID:                uuid.NewSHA1(importNamespace, []byte("claude-code-tool\x00"+identity+"\x00"+t.ToolUseID)),
+		ID:                uuid.NewSHA1(importNamespace, []byte(source+"-tool\x00"+sessionID+"\x00"+t.ToolUseID)),
 		MajordomoAPIKeyID: &apiKeyID,
 		TraceID:           traceID,
 		SpanPath:          path,
 		ParentSpanID:      spanid.InteriorSpanID(traceID, path),
 		ToolName:          t.ToolName,
 		MCPServer:         mcpServer(t.ToolName),
-		Provider:          claudeCodeProvider,
+		Provider:          models.SessionProvider(source, t.Model),
 		Model:             t.Model,
 		CalledAt:          t.CalledAt,
 		ResultTokens:      t.ResultTokens,

@@ -49,6 +49,7 @@ func run() int {
 		}
 	}()
 	tools.registerClaudeCodeTools(server)
+	tools.registerAgentTools(server)
 
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		fmt.Fprintf(os.Stderr, "gateway-mcp: %v\n", err)

@@ -28,7 +28,7 @@ func (th *Thread) carriedResults() []carriedResult {
 	var active []int
 	ends := make([]int, len(out))
 	for j, r := range th.Requests {
-		if j > 0 && r.Context() < th.Requests[j-1].Context() {
+		if r.Reset || j > 0 && r.Context() < th.Requests[j-1].Context() {
 			active = nil
 		}
 		appended := byGap[j]
@@ -57,6 +57,9 @@ func (th *Thread) carriedResults() []carriedResult {
 }
 
 func (th *Thread) placements() []Placement {
+	if th.Placements != nil {
+		return th.Placements
+	}
 	sizes := th.ResultTokens()
 	starts := th.resultStarts(sizes)
 	positions := make([]Placement, len(starts))

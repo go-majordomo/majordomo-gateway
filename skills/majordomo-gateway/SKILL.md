@@ -70,6 +70,10 @@ With `gateway-mcp` registered in Claude Code, the same is available as MCP tools
 (`claude_code_explain` — current session by default — `claude_code_compare`,
 `claude_code_import`), so the user can simply ask Claude what a session or a feature cost.
 
+## Codex sessions
+
+Use `gateway-cli codex` with `explain`, `compare`, `mcp-overhead`, or `import`. Their MCP tools have the same client prefix, for example `codex_explain` and `codex_import`. Always provide `session_id` to these MCP tools; use an explicit ID or a unique prefix. Use `mcp-overhead --probe --model <model> --mcp-config <file>` to run live measurements on an authenticated client. The default config-based projection sizes the full tool schemas. The README gives examples of both.
+
 ## Step 3 — Connect a client
 
 The gateway speaks the providers' own wire formats. Change the base URL, add the

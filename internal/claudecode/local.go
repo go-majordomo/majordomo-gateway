@@ -148,46 +148,32 @@ func MeasureMCP(model, config string) (*MCPMeasurement, error) {
 		return nil, fmt.Errorf("%s: no mcpServers found", config)
 	}
 
-	m := &MCPMeasurement{Alone: map[string]int{}}
-	if m.Baseline, m.ModelID, err = measureContext(model, ""); err != nil {
-		return nil, fmt.Errorf("baseline run: %w", err)
-	}
 	tmp, err := os.MkdirTemp("", "mcp-overhead")
 	if err != nil {
 		return nil, err
 	}
 	defer removeTempDir(tmp)
 
-	for n := range cfg.MCPServers {
-		m.Names = append(m.Names, n)
+	names := make([]string, 0, len(cfg.MCPServers))
+	for name := range cfg.MCPServers {
+		names = append(names, name)
 	}
-	sort.Strings(m.Names)
-	sum := 0
-	for _, name := range m.Names {
-		path, err := writeServerConfig(tmp, name, cfg.MCPServers[name])
-		if err != nil {
-			return nil, err
+	return MeasureDefinitions(names, func(selected []string) (int, string, error) {
+		path := ""
+		switch len(selected) {
+		case 0:
+		case 1:
+			var err error
+			path, err = writeServerConfig(tmp, selected[0], cfg.MCPServers[selected[0]])
+			if err != nil {
+				return 0, "", err
+			}
+		default:
+			path = config
 		}
-		ctx, _, err := measureContext(model, path)
-		if err != nil {
-			return nil, fmt.Errorf("server %s: %w", name, err)
-		}
-		m.Alone[name] = ctx - m.Baseline
-		sum += m.Alone[name]
-	}
+		return measureContext(model, path)
+	})
 
-	// Measured alone, each server also carries a shared MCP preamble that is
-	// sent only once when several servers are connected.
-	m.Combined = sum
-	if len(m.Names) > 1 {
-		ctx, _, err := measureContext(model, config)
-		if err != nil {
-			return nil, fmt.Errorf("all servers: %w", err)
-		}
-		m.Combined = ctx - m.Baseline
-		m.Shared = max((sum-m.Combined)/(len(m.Names)-1), 0)
-	}
-	return m, nil
 }
 
 // measureContext runs a minimal `claude -p` call and returns its total input
@@ -274,4 +260,36 @@ func removeTempDir(path string) {
 	if err := os.RemoveAll(path); err != nil {
 		slog.Warn("remove temporary directory", "path", path, "error", err)
 	}
+}
+
+// MeasureDefinitions compares identical contexts with zero, one and all enabled servers.
+func MeasureDefinitions(names []string, measure func([]string) (int, string, error)) (*MCPMeasurement, error) {
+	if len(names) == 0 {
+		return nil, errors.New("no enabled MCP servers")
+	}
+	sort.Strings(names)
+	base, model, err := measure(nil)
+	if err != nil {
+		return nil, fmt.Errorf("baseline: %w", err)
+	}
+	m := &MCPMeasurement{ModelID: model, Baseline: base, Names: names, Alone: map[string]int{}}
+	sum := 0
+	for _, name := range names {
+		count, _, err := measure([]string{name})
+		if err != nil {
+			return nil, fmt.Errorf("probe %s: %w", name, err)
+		}
+		m.Alone[name] = count - base
+		sum += count - base
+	}
+	m.Combined = sum
+	if len(names) > 1 {
+		count, _, err := measure(names)
+		if err != nil {
+			return nil, fmt.Errorf("all servers: %w", err)
+		}
+		m.Combined = count - base
+		m.Shared = max(0, (sum-m.Combined)/(len(names)-1))
+	}
+	return m, nil
 }

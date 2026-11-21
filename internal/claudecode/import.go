@@ -24,7 +24,7 @@ func BuildImport(s *Session, label string, metadata map[string]string) models.Cl
 		turnPath := fmt.Sprintf("%s/turn-%d", label, t.Number)
 		addThread(&imp, s.Main, mainResults, t.From, t.To, turnPath)
 		for _, sub := range t.Subagents {
-			addThread(&imp, sub, sub.carriedResults(), 0, len(sub.Requests), turnPath+"/"+AgentStepName(sub))
+			addThread(&imp, sub, sub.carriedResults(), 0, len(sub.Requests), turnPath+"/"+sub.ParentPath+AgentStepName(sub))
 		}
 	}
 	return imp
@@ -32,6 +32,9 @@ func BuildImport(s *Session, label string, metadata map[string]string) models.Cl
 
 // AgentStepName is a subagent's step name, e.g. "agent:researcher-a62041eb".
 func AgentStepName(th *Thread) string {
+	if th.StepName != "" {
+		return th.StepName
+	}
 	id := th.AgentID
 	if len(id) > 8 {
 		id = id[:8]

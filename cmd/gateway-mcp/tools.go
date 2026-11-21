@@ -88,7 +88,7 @@ func registerTools(s *mcp.Server, c *client) {
 	// get_run_tree fetches one run's waterfall by trace id.
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_run_tree",
-		Description: "The full cost waterfall for one agent run: a tree of tool/agent steps and LLM calls with cost rolled up per node. Imported Claude Code sessions (trace ids starting claude-code:) also have kind \"tool\" nodes, one per tool call (MCP tools are named mcp__<server>__<tool>), whose attributed_cost is the share of the parent step's cost spent carrying that tool's result; it is already included in the parent's total_cost, so do not add it again. Use a trace id from list_runs.",
+		Description: "The full cost waterfall for one agent run: a tree of tool/agent steps and LLM calls with cost rolled up per node. Imported Codex and Claude Code sessions also have kind \"tool\" nodes, one per tool call (MCP tools are named mcp__<server>__<tool>), whose attributed_cost is the share of the parent step's cost spent carrying that tool's result; it is already included in the parent's total_cost, so do not add it again. Use a trace id from list_runs.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in traceInput) (*mcp.CallToolResult, any, error) {
 		raw, err := c.getRaw("/api/v1/usage/runs/" + in.TraceID)
 		if err != nil {

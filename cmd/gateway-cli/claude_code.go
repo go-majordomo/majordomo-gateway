@@ -144,7 +144,7 @@ func claudeCodeImport(c *client, args []string) error {
 				printImportPreview(&imp)
 				continue
 			}
-			res, err := importSession(c, *key, &imp)
+			res, err := importSession(c, "claude-code", *key, &imp)
 			if err != nil {
 				return fmt.Errorf("import session %s: %w", s.ID, err)
 			}
@@ -198,8 +198,8 @@ func printImportPreview(imp *models.ClaudeCodeImport) {
 
 // importSession posts a session to the gateway, authenticated with a gateway API
 // key (the import endpoint uses the caller's key, not the admin token).
-func importSession(c *client, key string, imp *models.ClaudeCodeImport) (*models.ClaudeCodeImportResult, error) {
-	return sessionclient.Import(c.http, c.baseURL, "claude-code", key, imp)
+func importSession(c *client, source, key string, imp *models.ClaudeCodeImport) (*models.ClaudeCodeImportResult, error) {
+	return sessionclient.Import(c.http, c.baseURL, source, key, imp)
 }
 
 // ── explain / compare ─────────────────────────────────────────────────────────
@@ -344,6 +344,10 @@ func claudeCodeCompare(args []string) error {
 		return printJSON(cmp)
 	}
 
+	return printComparison(cmp)
+}
+
+func printComparison(cmp claudecode.Comparison) error {
 	fmt.Printf("Before %s: $%.6f (%d requests)\n", short(cmp.Before), cmp.BeforeTotal, cmp.BeforeRequests)
 	fmt.Printf("After  %s: $%.6f (%d requests)\n", short(cmp.After), cmp.AfterTotal, cmp.AfterRequests)
 	fmt.Printf("Change: %+.6f (%+.0f%%)\n\n", cmp.Delta, cmp.DeltaPercent)

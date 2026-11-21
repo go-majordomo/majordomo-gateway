@@ -44,6 +44,8 @@ dispatch:
 		err = runMetadata(c, args[1:])
 	case "usage":
 		err = runUsage(c, args[1:])
+	case "codex":
+		err = runAgentUsage(c, args[0], args[1:])
 	case "claude-code":
 		err = runClaudeCode(c, args[1:])
 	case "help", "-h", "--help":
@@ -97,6 +99,8 @@ Commands:
   usage runs         Agent runs (grouped by trace id)
   usage run <traceId>  Render one agent run's cost waterfall
   usage request <id> [--body]  One request's detail, or its archived bodies (--body)
+
+  codex                     Explain, compare, import sessions, or measure MCP schema overhead
 
   claude-code import        Import Claude Code sessions (e.g. run on a subscription) as runs
   claude-code explain       Where each message's cost went: output, tools, MCP, subagents (local)
