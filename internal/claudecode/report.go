@@ -64,7 +64,7 @@ type Report struct {
 const SharedPreambleName = "(shared preamble)"
 
 const reportNote = "Costs are API-equivalent: what these tokens cost at API list prices. " +
-	"Tool and MCP-definition costs are parts of the turn total, not additions to it."
+	"Tool and definition costs are estimated shares of the turn total. Result positions are reconstructed from the transcript and matched to each request’s reported cache reads and writes."
 
 // ReportOptions tune BuildReport.
 type ReportOptions struct {
@@ -76,8 +76,9 @@ type ReportOptions struct {
 func BuildReport(calc Calculator, s *Session, opts ReportOptions) Report {
 	r := Report{SessionID: s.ID, Note: reportNote}
 	unpriced := map[string]bool{}
+	mainResults := s.Main.carriedResults()
 	for _, t := range s.Turns() {
-		b := Explain(calc, s.Main, t.From, t.To, opts.Definitions)
+		b := explain(calc, s.Main, mainResults, t.From, t.To, opts.Definitions)
 		tr := TurnReport{Number: t.Number, At: t.At, Prompt: snippet(t.Prompt, 80), Main: partReport(b, opts.PerCall)}
 		tr.Total = b.Total
 		if diff := b.Attributed() - b.Total; b.Total > 0 && diff/b.Total > 0.01 {

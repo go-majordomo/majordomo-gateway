@@ -80,15 +80,19 @@ const anthropic = "anthropic"
 // output, each tool result carried, MCP tool definitions (when defs is given)
 // and the rest of the context.
 func Explain(calc Calculator, th *Thread, from, to int, defs *MCPDefinitions) Breakdown {
+	return explain(calc, th, th.carriedResults(), from, to, defs)
+}
+
+func explain(calc Calculator, th *Thread, results []carriedResult, from, to int, defs *MCPDefinitions) Breakdown {
 	b := Breakdown{Requests: to - from, Definitions: map[string]float64{}, Unpriced: map[string]bool{}}
-	sizes := th.ResultTokens()
 	byCall := map[int]*ToolCost{}
 	var order []int
 
 	for j := from; j < to; j++ {
 		r := th.Requests[j]
+		provider := anthropic
 		total := calc.Calculate(&models.UsageMetrics{
-			Provider:              anthropic,
+			Provider:              provider,
 			Model:                 r.Model,
 			InputTokens:           r.Context(),
 			OutputTokens:          r.OutputTokens,
@@ -100,31 +104,31 @@ func Explain(calc Calculator, th *Thread, from, to int, defs *MCPDefinitions) Br
 		if !total.ModelAliasFound {
 			b.Unpriced[r.Model] = true
 		}
-		// written prices n tokens entering this request uncached, at its mix of
-		// 5-minute and 1-hour cache writes (or plain input if it wrote none).
-		written := func(n int) float64 { return writeCost(calc, r, n) }
-		read := func(n int) float64 { return readCost(calc, r, n) }
-
 		parts := total.OutputCost
-		for i, res := range th.Results {
-			tokens, sent := sizes[i]
-			if !sent || res.Gap > j || j > res.Gap+th.RereadsAfter(res.Gap) {
+		defLimit := r.Context()
+		for i, res := range results {
+			k := j - res.Gap
+			if k < 0 || k >= len(res.charges) {
 				continue
 			}
 			tc := byCall[i]
 			if tc == nil {
-				tc = &ToolCost{ToolName: res.ToolName, Tokens: tokens, Earlier: res.Gap < from}
+				tc = &ToolCost{ToolName: res.ToolName, Tokens: res.Tokens, Earlier: res.Gap < from}
 				byCall[i] = tc
 				order = append(order, i)
 			}
-			var c float64
+			slice := res.charges[k]
+			if slice.Input > 0 {
+				defLimit = min(defLimit, res.Start)
+			}
+			c := calc.Calculate(slice.Metrics(provider)).TotalCost
 			if j == res.Gap {
-				c = written(tokens)
 				tc.WriteCost += c
 			} else {
-				c = read(tokens)
 				tc.ReadCost += c
-				tc.Rereads++
+				if slice.Input > 0 {
+					tc.Rereads++
+				}
 			}
 			parts += c
 		}
@@ -132,25 +136,18 @@ func Explain(calc Calculator, th *Thread, from, to int, defs *MCPDefinitions) Br
 		// Definitions sit at the start of the context, so this request's cache
 		// reads cover them first (possibly left by an earlier session with the
 		// same prefix); any remainder was written.
-		if defs != nil && defs.Total() > 0 {
-			defTokens := defs.Total()
-			cached := min(r.CacheReadTokens, defTokens)
-			share := func(n int) float64 {
-				c := float64(cached) / float64(defTokens)
-				return c*read(n) + (1-c)*written(n)
+		requestDefs := defs
+		if weight := requestDefs.Total(); weight > 0 {
+			slice := models.InputSlice(r.Model, r.Context(), r.CacheReadTokens, r.CacheCreation1hTokens, r.CacheCreation5mTokens, 0, min(weight, defLimit))
+			cost := calc.Calculate(slice.Metrics(provider)).TotalCost
+			for name, size := range requestDefs.PerServer {
+				b.Definitions[name] += cost * float64(size) / float64(weight)
 			}
-			for name, n := range defs.PerServer {
-				c := share(n)
-				b.Definitions[name] += c
-				parts += c
+			if requestDefs.Shared > 0 {
+				b.Definitions[""] += cost * float64(requestDefs.Shared) / float64(weight)
 			}
-			if defs.Shared > 0 {
-				c := share(defs.Shared)
-				b.Definitions[""] += c
-				parts += c
-			}
+			parts += cost
 		}
-
 		b.Total += total.TotalCost
 		b.Output += total.OutputCost
 		b.Rest += math.Max(total.TotalCost-parts, 0)
@@ -159,28 +156,6 @@ func Explain(calc Calculator, th *Thread, from, to int, defs *MCPDefinitions) Br
 		b.Tools = append(b.Tools, *byCall[i])
 	}
 	return b
-}
-
-// writeCost prices n tokens entering request r uncached, at r's price tier.
-func writeCost(calc Calculator, r Request, n int) float64 {
-	return calc.Calculate(r.writtenInput(n).Metrics(anthropic)).TotalCost
-}
-
-func (r Request) writtenInput(n int) models.ModelInput {
-	c := models.ModelInput{Model: r.Model, Prompt: r.Context(), Input: n}
-	if w := r.CacheCreationTokens(); w > 0 {
-		c.Write1h = int(math.Round(float64(n) * float64(r.CacheCreation1hTokens) / float64(w)))
-		c.Write5m = n - c.Write1h
-	}
-	return c
-}
-
-func (r Request) readInput(n int) models.ModelInput {
-	return models.ModelInput{Model: r.Model, Prompt: r.Context(), Input: n, Cached: n}
-}
-
-func readCost(calc Calculator, r Request, n int) float64 {
-	return calc.Calculate(r.readInput(n).Metrics(anthropic)).TotalCost
 }
 
 // Attributed is the sum of all parts; it equals Total up to rounding when no

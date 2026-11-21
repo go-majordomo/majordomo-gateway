@@ -19,11 +19,12 @@ func BuildImport(s *Session, label string, metadata map[string]string) models.Cl
 		label = DefaultLabel
 	}
 	imp := models.ClaudeCodeImport{SessionID: s.ID, Metadata: metadata}
+	mainResults := s.Main.carriedResults()
 	for _, t := range s.Turns() {
 		turnPath := fmt.Sprintf("%s/turn-%d", label, t.Number)
-		addThread(&imp, s.Main, t.From, t.To, turnPath)
+		addThread(&imp, s.Main, mainResults, t.From, t.To, turnPath)
 		for _, sub := range t.Subagents {
-			addThread(&imp, sub, 0, len(sub.Requests), turnPath+"/"+AgentStepName(sub))
+			addThread(&imp, sub, sub.carriedResults(), 0, len(sub.Requests), turnPath+"/"+AgentStepName(sub))
 		}
 	}
 	return imp
@@ -40,7 +41,7 @@ func AgentStepName(th *Thread) string {
 
 // addThread adds requests [from, to) of a thread, and the tool results they
 // carry first, under spanPath.
-func addThread(imp *models.ClaudeCodeImport, th *Thread, from, to int, spanPath string) {
+func addThread(imp *models.ClaudeCodeImport, th *Thread, results []carriedResult, from, to int, spanPath string) {
 	for _, r := range th.Requests[from:to] {
 		imp.Requests = append(imp.Requests, models.ClaudeCodeImportRequest{
 			RequestID:             r.RequestID,
@@ -54,11 +55,8 @@ func addThread(imp *models.ClaudeCodeImport, th *Thread, from, to int, spanPath 
 			CacheCreation1hTokens: r.CacheCreation1hTokens,
 		})
 	}
-	sizes := th.ResultTokens()
-
-	for i, res := range th.Results {
-		tokens, sent := sizes[i]
-		if !sent || res.Gap < from || res.Gap >= to {
+	for _, res := range results {
+		if res.Gap < from || res.Gap >= to {
 			continue
 		}
 		carrier := th.Requests[res.Gap]
@@ -66,24 +64,15 @@ func addThread(imp *models.ClaudeCodeImport, th *Thread, from, to int, spanPath 
 		if name == "" {
 			name = "unknown"
 		}
-		rereads := th.RereadsAfter(res.Gap)
-		charges := make([]models.ModelInput, 0, rereads+1)
-		for j, r := range th.Requests[res.Gap : res.Gap+rereads+1] {
-			c := r.writtenInput(tokens)
-			if j > 0 {
-				c = r.readInput(tokens)
-			}
-			charges = append(charges, c)
-		}
 		imp.ToolSpans = append(imp.ToolSpans, models.ClaudeCodeImportToolSpan{
 			ToolUseID:    res.ToolUseID,
 			SpanPath:     spanPath,
 			ToolName:     name,
 			Model:        carrier.Model,
 			CalledAt:     carrier.At,
-			ResultTokens: tokens,
+			ResultTokens: res.Tokens,
 
-			Charges: charges,
+			Charges: res.charges,
 		})
 	}
 }

@@ -2,6 +2,18 @@ package models
 
 import "math"
 
+// InputSlice intersects a result's estimated position in the prompt with the
+// reported cached prefix. Anthropic orders hour writes before five-minute writes.
+// Input after the last cache breakpoint is ordinary input.
+func InputSlice(model string, prompt, cached, write1h, write5m, start, size int) ModelInput {
+	start = min(max(0, start), prompt)
+	end := start + min(size, prompt-start)
+	overlap := func(lo, hi int) int { return max(0, min(end, hi)-max(start, lo)) }
+	return ModelInput{Model: model, Prompt: prompt, Input: end - start,
+		Cached: overlap(0, cached), Write1h: overlap(cached, cached+write1h),
+		Write5m: overlap(cached+write1h, cached+write1h+write5m)}
+}
+
 func (c ModelInput) Metrics(provider string) *UsageMetrics {
 	return &UsageMetrics{Provider: provider, BaseTier: c.Prompt == 0, Model: c.Model, PromptTokens: c.Prompt,
 		InputTokens: c.Input, CachedTokens: c.Cached, CacheCreationTokens: c.Write1h + c.Write5m,

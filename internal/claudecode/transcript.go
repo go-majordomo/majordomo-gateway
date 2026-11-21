@@ -356,3 +356,26 @@ func scanLines(files fs.FS, path string, fn func([]byte)) error {
 		}
 	}
 }
+
+// resultStarts places results, in transcript order, after the preceding
+// response. The transcript omits exact positions for injected context.
+func (th *Thread) resultStarts(sizes map[int]int) []int {
+	starts := make([]int, len(th.Results))
+	totals := map[int]int{}
+	for i, n := range sizes {
+		totals[th.Results[i].Gap] += n
+	}
+	offsets := map[int]int{}
+	for i, res := range th.Results {
+		size, ok := sizes[i]
+		if !ok {
+			continue
+		}
+		gap := res.Gap
+		prev := th.Requests[gap-1]
+		start := min(prev.Context()+prev.OutputTokens, max(0, th.Requests[gap].Context()-totals[gap]))
+		starts[i] = start + offsets[gap]
+		offsets[gap] += size
+	}
+	return starts
+}
