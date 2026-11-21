@@ -284,12 +284,15 @@ func usageRuns(c *client, uf *usageFlags) error {
 
 // runNode mirrors models.RunNode for rendering the waterfall.
 type runNode struct {
-	Name         string     `json:"name"`
-	Kind         string     `json:"kind"`
-	Model        *string    `json:"model,omitempty"`
-	TotalCost    float64    `json:"total_cost"`
-	RequestCount int64      `json:"request_count"`
-	Children     []*runNode `json:"children"`
+	Name           string     `json:"name"`
+	Kind           string     `json:"kind"`
+	Model          *string    `json:"model,omitempty"`
+	TotalCost      float64    `json:"total_cost"`
+	RequestCount   int64      `json:"request_count"`
+	ResultTokens   *int       `json:"result_tokens,omitempty"`
+	RereadCount    *int       `json:"reread_count,omitempty"`
+	AttributedCost float64    `json:"attributed_cost,omitempty"`
+	Children       []*runNode `json:"children"`
 }
 
 func runUsageRunTree(c *client, traceID string, asJSON bool) error {
@@ -298,6 +301,7 @@ func runUsageRunTree(c *client, traceID string, asJSON bool) error {
 		Root         *runNode `json:"root"`
 		TotalCost    float64  `json:"total_cost"`
 		RequestCount int64    `json:"request_count"`
+		ToolCost     float64  `json:"tool_cost"`
 	}
 	if err := c.get("/api/v1/usage/runs/"+traceID, &tree); err != nil {
 		return err
@@ -309,11 +313,25 @@ func runUsageRunTree(c *client, traceID string, asJSON bool) error {
 	if tree.Root != nil {
 		printRunNode(tree.Root, 0)
 	}
+	if tree.ToolCost > 0 {
+		fmt.Printf("\nTool results account for $%.4f of the total (tool lines are included in the cost above them).\n", tree.ToolCost)
+	}
 	return nil
 }
 
 func printRunNode(n *runNode, depth int) {
 	indent := strings.Repeat("  ", depth)
+	if n.Kind == "tool" {
+		label := "tool " + n.Name
+		if n.ResultTokens != nil {
+			label += fmt.Sprintf(" %d tok", *n.ResultTokens)
+		}
+		if n.RereadCount != nil && *n.RereadCount > 0 {
+			label += fmt.Sprintf(" +%d re-reads", *n.RereadCount)
+		}
+		fmt.Printf("%s%-40s ($%.4f)\n", indent, truncate(label, 40), n.AttributedCost)
+		return
+	}
 	label := n.Name
 	if n.Kind == "llm" && n.Model != nil {
 		label = fmt.Sprintf("%s (%s)", n.Name, *n.Model)
