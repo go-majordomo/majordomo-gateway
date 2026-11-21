@@ -25,7 +25,7 @@ func run() int {
 	// Secrets default to empty and fall back to the environment after parsing,
 	// so -h never prints them.
 	token := flag.String("token", "", "gateway admin token (default $GATEWAY_TOKEN)")
-	apiKey := flag.String("api-key", "", "gateway API key, for claude_code_import (default $MAJORDOMO_API_KEY)")
+	apiKey := flag.String("api-key", "", "gateway API key, for session imports (default $MAJORDOMO_API_KEY)")
 	flag.Parse()
 	if *token == "" {
 		*token = os.Getenv("GATEWAY_TOKEN")

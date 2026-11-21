@@ -18,7 +18,7 @@ import (
 	"github.com/go-majordomo/majordomo-gateway/internal/pricing"
 )
 
-func TestCodexToolsRequireExplicitSession(t *testing.T) {
+func TestAgentToolsRequireExplicitSession(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	calc := pricing.NewService("", "../../model_catalog.json", "../../model_aliases.json", time.Hour)
@@ -88,7 +88,7 @@ func TestCodexToolsRequireExplicitSession(t *testing.T) {
 			}
 		})
 	}
-	for _, tool := range []string{"codex_explain", "codex_import"} {
+	for _, tool := range []string{"codex_explain", "codex_import", "cursor_explain", "cursor_import"} {
 		for _, args := range []map[string]any{{}, {"session_id": ""}, {"session_id": " "}} {
 			result, callErr := cs.CallTool(ctx, &mcp.CallToolParams{Name: tool, Arguments: args})
 			if callErr == nil && (result == nil || !result.IsError) {

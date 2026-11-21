@@ -21,7 +21,7 @@ func runAgentUsage(c *client, source string, args []string) error {
 	}
 	op := args[0]
 	fs := flag.NewFlagSet(source+" "+op, flag.ContinueOnError)
-	root := fs.String("store", agentusage.DefaultPath(source), "Codex sessions directory")
+	root := fs.String("store", agentusage.DefaultPath(source), "Codex sessions directory or Cursor state.vscdb or CLI chats directory")
 	project := fs.String("project", ".", "project directory for session discovery")
 	var id, config, model, beforeConfig, afterConfig, label, key, sinceArg string
 	var perCall, dryRun, jsonOut, probe bool
@@ -144,6 +144,7 @@ func runAgentUsage(c *client, source string, args []string) error {
 		if err != nil {
 			return err
 		}
+		defer store.Close()
 		report := func(id, config, measurement string) (agentusage.Report, error) {
 			entries, err := store.Find(*project, id, time.Time{})
 			if err != nil {
@@ -246,13 +247,16 @@ func runAgentUsage(c *client, source string, args []string) error {
 			}
 			if dryRun {
 				printImportPreview(&imp)
+				if imp.Metadata["usage_basis"] == "estimated" {
+					fmt.Println("  Estimated token usage")
+				}
 				continue
 			}
 			result, err := importSession(c, source, key, &imp)
 			if err != nil {
 				return err
 			}
-			fmt.Printf("%s: %d new requests, %d tool spans, $%.6f (%d unpriced)\n", result.TraceID, result.RequestsInserted, result.ToolSpans, result.TotalCost, result.Unpriced)
+			fmt.Printf("%s: %d new requests, %d tool spans, $%.6f (%d unpriced) %s\n", result.TraceID, result.RequestsInserted, result.ToolSpans, result.TotalCost, result.Unpriced, imp.Metadata["usage_basis"])
 		}
 		return nil
 	}

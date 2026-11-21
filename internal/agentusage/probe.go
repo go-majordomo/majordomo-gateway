@@ -8,12 +8,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"sort"
 	"time"
-
-	"github.com/pelletier/go-toml/v2"
 
 	"github.com/go-majordomo/majordomo-gateway/internal/claudecode"
 )
@@ -44,9 +40,7 @@ func Probe(ctx context.Context, source, model, path string) (ProbeResult, error)
 			continue
 		}
 		names = append(names, name)
-		if source == "codex" {
-			c["required"] = true
-		}
+
 	}
 	if len(names) == 0 {
 		return result, errors.New("no enabled MCP servers")
@@ -81,31 +75,16 @@ func probeContext(ctx context.Context, source, model, work string, servers map[s
 		return 0, err
 	}
 	defer removeProbeDir(home)
-	const prompt = "Respond with OK. Do not use tools."
-	var cmd *exec.Cmd
-	auth := filepath.Join(filepath.Dir(DefaultPath("codex")), "auth.json")
-	if _, err := os.Stat(auth); err == nil {
-		if err = os.Symlink(auth, filepath.Join(home, "auth.json")); err != nil {
-			return 0, err
-		}
+	client := readers[source]
+	if client == nil {
+		return 0, fmt.Errorf("unknown client %q", source)
 	}
-	data, err := toml.Marshal(map[string]any{"mcp_servers": servers})
-	if err != nil {
-		return 0, err
-	}
-	if err = os.WriteFile(filepath.Join(home, "config.toml"), data, 0600); err != nil {
-		return 0, err
-	}
-	cmd = exec.CommandContext(ctx, "codex", "exec", "--ephemeral", "--skip-git-repo-check", "--json", "-s", "read-only", "-m", model, prompt)
-	cmd.Env = append(os.Environ(), "CODEX_HOME="+home)
-	cmd.Dir = work
-	data, err = cmd.Output()
-	if err != nil {
-		if ctx.Err() != nil {
-			return 0, ctx.Err()
-		}
-		return 0, fmt.Errorf("%s probe failed (check CLI login, model and configured servers): %w", source, err)
-	}
+	return client.probe(ctx, model, home, work, servers)
+}
+
+const probePrompt = "Respond with OK. Do not use tools."
+
+func measuredInput(data []byte) (int, error) {
 	var input int
 	for _, line := range bytes.Split(data, []byte{'\n'}) {
 		var e struct {
@@ -123,10 +102,7 @@ func probeContext(ctx context.Context, source, model, work string, servers map[s
 			input = e.Usage.Input
 		}
 	}
-	if input > 0 {
-		return input, nil
-	}
-	return 0, errors.New("client did not return a measured context count")
+	return input, nil
 }
 
 // ApplyMeasurement uses the measured combined delta as the budget and

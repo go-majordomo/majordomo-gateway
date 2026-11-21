@@ -3,18 +3,18 @@ package agentusage
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/klauspost/compress/zstd"
+	_ "modernc.org/sqlite"
 
 	"github.com/go-majordomo/majordomo-gateway/internal/claudecode"
 )
@@ -25,71 +25,49 @@ type Entry struct {
 	Projects, Children        []string
 }
 type Store struct {
+	reader  reader
 	Source  string
 	entries []Entry
+	db      *sql.DB
+	// Skipped lists stores that could not be read ("path: error"); the
+	// readable ones are still indexed.
+	Skipped []string
 }
+
+// reader owns the native client's storage format, paths and context probe.
+type reader interface {
+	defaultPath() string
+	index(context.Context, *Store, string) error
+	load(context.Context, *Store, Entry) (*Session, error)
+	probe(context.Context, string, string, string, map[string]map[string]any) (int, error)
+}
+
+var readers = map[string]reader{"codex": codexReader{}, "cursor": cursorReader{}}
 
 func DefaultPath(source string) string {
-	home, _ := os.UserHomeDir()
-	root := os.Getenv("CODEX_HOME")
-	if root == "" {
-		root = filepath.Join(home, ".codex")
+	if r := readers[source]; r != nil {
+		return r.defaultPath()
 	}
-	return filepath.Join(root, "sessions")
+	return ""
 }
-
 func Open(ctx context.Context, source, path string) (*Store, error) {
-	s := &Store{Source: source}
-	if source == "codex" {
-		err := filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if d.IsDir() || !strings.HasSuffix(p, ".jsonl") && !strings.HasSuffix(p, ".jsonl.zst") {
-				return nil
-			}
-			var meta struct {
-				Type    string
-				Payload struct {
-					ID, Cwd string
-					Source  json.RawMessage
-				}
-			}
-			err = readLines(p, func(line []byte) error {
-				if err := json.Unmarshal(line, &meta); err != nil {
-					return err
-				}
-				return io.EOF
-			})
-			if err != nil {
-				return fmt.Errorf("read rollout header %s: %w", p, err)
-			}
-			if meta.Type != "session_meta" || meta.Payload.ID == "" {
-				return nil
-			}
-			info, err := d.Info()
-			if err != nil {
-				return err
-			}
-			var src struct {
-				Subagent struct {
-					ThreadSpawn struct {
-						Parent string `json:"parent_thread_id"`
-					} `json:"thread_spawn"`
-				}
-			}
-			_ = json.Unmarshal(meta.Payload.Source, &src)
-			s.entries = append(s.entries, Entry{ID: meta.Payload.ID, Project: meta.Payload.Cwd, Parent: src.Subagent.ThreadSpawn.Parent, Path: p, Modified: info.ModTime()})
-			return ctx.Err()
-		})
-		if err != nil {
-			return nil, err
-		}
-	} else {
+	r := readers[source]
+	if r == nil {
 		return nil, fmt.Errorf("unknown client %q", source)
+	}
+	s := &Store{Source: source, reader: r}
+	if err := r.index(ctx, s, path); err != nil {
+		s.Close()
+		return nil, err
 	}
 	sort.SliceStable(s.entries, func(i, j int) bool { return s.entries[i].Modified.After(s.entries[j].Modified) })
 	return s, nil
+}
+
+func (s *Store) Close() {
+	if s.db != nil {
+		_ = s.db.Close() // The store opens read-only databases.
+	}
 }
 
 func (s *Store) Find(project, id string, since time.Time) ([]Entry, error) {
@@ -117,6 +95,10 @@ func (s *Store) Find(project, id string, since time.Time) ([]Entry, error) {
 		}
 	}
 	if len(found) == 0 {
+		if len(s.Skipped) > 0 {
+			return nil, fmt.Errorf("no %s session matches project %q or id %q (%d stores could not be read: %s)",
+				s.Source, project, id, len(s.Skipped), strings.Join(s.Skipped, "; "))
+		}
 		return nil, fmt.Errorf("no %s session matches project %q or id %q", s.Source, project, id)
 	}
 	if id != "" && len(found) > 1 {
@@ -131,8 +113,7 @@ func (s *Store) Load(ctx context.Context, e Entry) (*Session, error) {
 
 func (s *Store) load(ctx context.Context, e Entry, visited map[string]bool) (*Session, error) {
 	visited[e.ID] = true
-	session, err := codexSession(e)
-
+	session, err := s.reader.load(ctx, s, e)
 	if err != nil {
 		return nil, err
 	}

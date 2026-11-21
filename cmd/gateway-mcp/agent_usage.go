@@ -31,7 +31,7 @@ type agentImportInput struct {
 
 func (t *claudeCodeTools) registerAgentTools(server *mcp.Server) {
 
-	for _, source := range []string{"codex"} {
+	for _, source := range []string{"codex", "cursor"} {
 		load := func(ctx context.Context, id string) (*agentusage.Session, error) {
 			if strings.TrimSpace(id) == "" {
 				return nil, errors.New("session_id is required; specify a session id or unique prefix")
@@ -40,6 +40,7 @@ func (t *claudeCodeTools) registerAgentTools(server *mcp.Server) {
 			if err != nil {
 				return nil, err
 			}
+			defer store.Close()
 			entries, err := store.Find(".", id, time.Time{})
 			if err != nil {
 				return nil, err
@@ -84,7 +85,7 @@ func (t *claudeCodeTools) registerAgentTools(server *mcp.Server) {
 			}
 			return jsonResult(agentusage.Compare(a, b))
 		})
-		mcp.AddTool(server, &mcp.Tool{Name: source + "_import", Description: "Import usage counts, models, tool names and spans for one explicitly selected local " + source + " session into the configured gateway."}, func(ctx context.Context, _ *mcp.CallToolRequest, in agentImportInput) (*mcp.CallToolResult, any, error) {
+		mcp.AddTool(server, &mcp.Tool{Name: source + "_import", Description: "Import usage counts, models, tool names and spans for one explicitly selected local " + source + " session into the configured gateway. Estimated usage is tagged."}, func(ctx context.Context, _ *mcp.CallToolRequest, in agentImportInput) (*mcp.CallToolResult, any, error) {
 			if t.apiKey == "" {
 				return nil, nil, errors.New("session import needs --api-key or MAJORDOMO_API_KEY")
 			}

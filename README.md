@@ -274,36 +274,36 @@ above 100K prompt tokens) bills every part of a large request at that rate.
 The transcript format is Claude Code's internal format (verified with Claude Code
 2.1.x), not a published API.
 
-## Codex session costs
+## Codex and Cursor session costs
 
-Use `gateway-cli codex` to explain a session, compare two runs, measure MCP definition overhead, or import usage into the gateway. By default the CLI selects sessions in the current project. An explicit session ID or unique prefix searches across projects.
+Use `gateway-cli codex` or `gateway-cli cursor` to explain a session, compare two runs, measure MCP definition overhead, or import usage into the gateway. By default the CLI selects sessions in the current project. An explicit session ID or unique prefix searches across projects.
 
 ```bash
 gateway-cli codex explain --calls
-gateway-cli codex explain --session <id> --json
+gateway-cli cursor explain --session <id> --json
 gateway-cli codex compare <before-id> <after-id>
-gateway-cli codex import --session <id> --dry-run
-gateway-cli codex import --watch 30s --meta team=growth
-gateway-cli usage run codex:<id>
+gateway-cli cursor import --session <id> --dry-run
+gateway-cli cursor import --watch 30s --meta team=growth
+gateway-cli usage run <trace-id-from-import>
 ```
 
-Codex reads rollouts under `$CODEX_HOME/sessions` (including compressed `.jsonl.zst` files). It prices each response once using the model, total input, cached input and output counters.
+Codex reads rollouts under `$CODEX_HOME/sessions` (including compressed `.jsonl.zst` files). It prices each response once using the model, total input, cached input and output counters. Cursor reads the desktop composer database and local CLI chat stores. Desktop reports use the available bubble counters. When counters are empty, the report estimates visible input and output at four bytes per token and assumes uncached input. CLI reports use each available message timestamp. Missing times use the session start and set `estimated_time` in the report and `time_basis=session_start` on import. CLI estimates cover the ordered messages retained in the current conversation snapshot and use the last selected model. Compacted history, hidden context, model changes and provider-side caching can change the actual cost. Estimated imports carry `usage_basis=estimated`. Use `--store` for an alternate rollout directory, Cursor desktop `state.vscdb`, or Cursor CLI `chats` directory.
 
 Tool-result costs estimate the share of input occupied by each returned result and its later appearances until compaction or a drop in context size. Reports use each consuming model’s price and the result’s estimated position within the recorded cache prefix. Wrapped tools appear under the wrapper name when the client only records that name. Parent and child sessions are grouped when the client records their relationship. Unknown model prices appear in `unpriced_models` and contribute zero dollars. Dollar figures use the gateway catalog’s API rates. Input cache writes without TTL pricing are valued as regular input. Subscription credits, priority tiers, and fees charged directly by tools require separate billing data. The bundled GPT-6.2 prices use the standard API rates. [OpenAI pricing](https://developers.openai.com/api/docs/pricing)
 
 ### MCP definition overhead
 
-Without a config, `mcp-overhead` uses the last request’s recorded definitions. For an inventory, pass a trusted client config. The CLI connects to its configured servers, calls MCP `tools/list`, and projects cached and uncached prices for the serialized schemas. For a measured context delta, add `--probe`. This runs a short model call with no configured servers, one per server, and one with all servers when needed. It uses isolated client configuration and requires working CLI authentication.
+Without a config, `mcp-overhead` uses the last request’s recorded definitions or Cursor’s latest aggregate MCP snapshot. For an inventory, pass a trusted client config. The CLI connects to its configured servers, calls MCP `tools/list`, and projects cached and uncached prices for the serialized schemas. For a measured context delta, add `--probe`. This runs a short model call with no configured servers, one per server, and one with all servers when needed. It uses isolated client configuration and requires working CLI authentication. The Cursor probe also needs a client that returns input usage or records a context count.
 
 ```bash
-gateway-cli codex mcp-overhead --mcp-config ~/.codex/config.toml --model gpt-5 --requests 1000
+gateway-cli cursor mcp-overhead --mcp-config ~/.cursor/mcp.json --model gpt-5 --requests 1000
 gateway-cli codex mcp-overhead --probe --mcp-config ~/.codex/config.toml --model gpt-6.2-sol > probe.json
 gateway-cli codex explain --session <id> --mcp-measurement probe.json
 ```
 
 The inventory assumes the full catalog is loaded. Live probes capture the client’s initial exposure, which can be smaller with deferred tools. Small deltas can vary between runs. Applying a saved probe uses its combined delta for matching-model requests and splits that total across servers in proportion to their measured individual deltas.
 
-With `gateway-mcp` registered, use `codex_explain`, `codex_compare` or `codex_import`. The explain and import MCP tools require an explicit `session_id` or unique prefix; they never select the latest session or infer one from `CODEX_THREAD_ID`. Imports authenticate with `MAJORDOMO_API_KEY` and post counts, model and tool names, IDs, timestamps, tags and span paths to `/v1/codex/import`. Re-importing a session reuses its request IDs and updates tool spans as more results are carried forward.
+With `gateway-mcp` registered, use `codex_explain`, `codex_compare`, `codex_import`, `cursor_explain`, `cursor_compare`, or `cursor_import`. The explain and import MCP tools require an explicit `session_id` or unique prefix; they never select the latest session or infer one from `CODEX_THREAD_ID`. Imports authenticate with `MAJORDOMO_API_KEY` and post counts, model and tool names, IDs, timestamps, tags and span paths to `/v1/codex/import` or `/v1/cursor/import`. Re-importing a session reuses its request IDs and updates tool spans as more results are carried forward.
 
 ## Configuration
 

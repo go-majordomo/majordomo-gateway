@@ -17,4 +17,4 @@ func SessionProvider(source, model string) string {
 }
 
 // SessionSources lists the supported import endpoints.
-func SessionSources() []string { return []string{"claude-code", "codex"} }
+func SessionSources() []string { return []string{"claude-code", "codex", "cursor"} }
